@@ -1,0 +1,19 @@
+[package]
+name = "mewsplit-desktop"
+version = "0.1.0"
+description = "mewsplit"
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+tauri = { version = "2.11.5", features = [] }
+tauri-plugin-shell = "2.3.6"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

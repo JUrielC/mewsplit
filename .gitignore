@@ -1,0 +1,66 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Rust / Tauri
+target/
+desktop/src-tauri/gen/
+
+# Salidas del pipeline
+output/
+bench_output/
+salida/
+salida_bench/
+*.wav
+*.mp3
+*.flac
+*.m4a
+!backend/tests/**/*.wav
+
+# Checkpoints: se descargan en tiempo de ejecución, nunca se versionan
+*.ckpt
+*.pth
+*.onnx
+*.th
+
+# Entorno y Secretos
+.env
+.env.*
+!.env.example
+.DS_Store
+*.pem
+*.key
+secrets.json
+
+# IDEs y Editores
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Cobertura y builds genéricos
+coverage/
+build/
+dist/
+
+# Directorios locales / No versionados
+pipeline/
+design/

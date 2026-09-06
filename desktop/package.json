@@ -1,0 +1,13 @@
+{
+  "name": "mewsplit-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cáscara de Tauri. Solo arranca el backend como sidecar y sirve el frontend.",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4"
+  }
+}

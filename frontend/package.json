@@ -1,0 +1,26 @@
+{
+  "name": "mewsplit-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Interfaz de mewsplit. La misma build sirve a web y a escritorio (Tauri).",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "16.3.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "26.4.1",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
+    "eslint": "10.10.0",
+    "eslint-config-next": "16.3.4",
+    "typescript": "5.9.3"
+  }
+}

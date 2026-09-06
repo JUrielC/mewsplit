@@ -1,0 +1,4 @@
+# El Python empaquetado lo produce scripts/build-sidecar.sh. Pesa cientos de
+# MB (PyTorch) y no se versiona.
+*
+!.gitignore

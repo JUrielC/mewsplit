@@ -1,0 +1,293 @@
+/*
+ * Retícula del estudio.
+ *
+ * DOS REGIONES. A la izquierda los controles del canal, fijos. A la derecha
+ * un único contenedor desplazable con los acordes y las ondas.
+ *
+ * Que sea UNO SOLO es lo que los mantiene sincronizados: comparten el mismo
+ * scroll y el mismo lienzo, así que no hay nada que sincronizar a mano ni
+ * ejes que puedan separarse. El playhead vive dentro del lienzo y se desplaza
+ * con él por el mismo motivo.
+ *
+ * Las filas de las dos regiones se alinean porque comparten --row-height y
+ * --chord-height. Si cambias una altura, cámbiala aquí y no en el componente.
+ */
+
+.studio {
+  --row-height: 58px;
+  --chord-height: 44px;
+  --col-name: 96px;
+  --col-readout: 56px;
+  --col-fader: 120px;
+  --col-toggles: 48px;
+  --col-gap: 16px;
+
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 0.5px solid var(--line);
+}
+
+.modes {
+  display: flex;
+  gap: 24px;
+}
+
+.modeOn {
+  color: var(--accent);
+}
+
+.zoom {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.zoom button:disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.board {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  padding-top: 12px;
+}
+
+/* Columna fija de controles. */
+.mixer {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  padding-right: var(--col-gap);
+  border-right: 0.5px solid var(--line);
+}
+
+/* Hueco a la altura de la barra de acordes, para que las filas casen. */
+.chordSpacer {
+  height: var(--chord-height);
+  flex: none;
+}
+
+.channel {
+  display: grid;
+  grid-template-columns:
+    var(--col-name) var(--col-readout) var(--col-fader) var(--col-toggles);
+  align-items: center;
+  gap: var(--col-gap);
+  height: var(--row-height);
+  flex: none;
+}
+
+.channelMuted {
+  opacity: 0.35;
+}
+
+.name {
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: var(--tracking);
+  text-transform: lowercase;
+  color: var(--text-soft);
+}
+
+.nameSoloed {
+  color: var(--accent);
+}
+
+.readout {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-soft);
+  text-align: right;
+}
+
+/* Fader fino: la pista es una línea de 0.5px, no una caja. */
+.fader {
+  appearance: none;
+  width: 100%;
+  height: 12px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.fader::-webkit-slider-runnable-track {
+  height: 0.5px;
+  background: var(--line);
+}
+
+.fader::-webkit-slider-thumb {
+  appearance: none;
+  width: 9px;
+  height: 9px;
+  margin-top: -4px;
+  background: transparent;
+  border: 0.5px solid var(--text-soft);
+}
+
+.fader:focus-visible::-webkit-slider-thumb,
+.fader:hover::-webkit-slider-thumb {
+  border-color: var(--text);
+}
+
+.toggles {
+  display: flex;
+  gap: 10px;
+}
+
+.toggle {
+  font-size: 10px;
+  letter-spacing: var(--tracking);
+  color: var(--text-dim);
+}
+
+.toggleOn {
+  color: var(--accent);
+}
+
+/* Carril de tiempo. */
+.scroller {
+  flex: 1;
+  min-width: 0;
+  margin-left: var(--col-gap);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+/*
+ * --zoom multiplica el ancho visible: a 1× cabe la canción entera, a 4× hay
+ * cuatro pantallas de detalle. Porcentaje y no píxeles por segundo para que
+ * una canción de 30s y una de 6 min se comporten igual.
+ */
+.canvas {
+  position: relative;
+  width: calc(var(--zoom, 1) * 100%);
+  min-width: 100%;
+  cursor: pointer;
+}
+
+.chordLane {
+  display: flex;
+  height: var(--chord-height);
+  border-bottom: 0.5px solid var(--line);
+}
+
+.chord {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 0;
+  padding-left: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  border-left: 0.5px solid var(--line-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  transition: background-color 80ms linear;
+}
+
+.chord:hover {
+  background: var(--bg-hover);
+}
+
+/*
+ * El acorde que suena se ilumina entero, no solo su letra. El fondo es el
+ * mismo gris de los bordes: marcar el bloque con el naranja rompería la regla
+ * de que el acento ocupa menos del 5% de la pantalla. El acento se queda en
+ * la letra, que es lo que se lee.
+ *
+ * `.chord.chordPlaying` y no `.chordPlaying` a secas: si no, `.chord:hover`
+ * tiene más especificidad y el fondo del acorde activo desaparecería al
+ * pasar el ratón por encima.
+ */
+.chord.chordPlaying {
+  background: var(--line);
+  color: var(--accent);
+}
+
+.waveRow {
+  display: flex;
+  align-items: center;
+  height: var(--row-height);
+  border-bottom: 0.5px solid var(--line-faint);
+}
+
+.waveRowMuted {
+  opacity: 0.35;
+}
+
+.waveform {
+  display: block;
+  width: 100%;
+  height: 38px;
+}
+
+/*
+ * --progress (0..1) lo inyecta Studio.tsx sobre el lienzo, no sobre la vista.
+ *
+ * 2px y no 0.5px como el resto de líneas: es el único elemento que se mueve
+ * y hay que encontrarlo de un vistazo entre las ondas. El translateX(-50%)
+ * centra el trazo sobre el instante exacto; sin él la línea empezaría ahí y
+ * el borde derecho iría 2px adelantado.
+ */
+.playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(100% * var(--progress, 0));
+  width: 2px;
+  transform: translateX(-50%);
+  background: var(--accent);
+  pointer-events: none;
+}
+
+/* Cabeza cuadrada, sin curvas: ancla la vista aunque la línea quede tapada. */
+.playhead::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  transform: translateX(-50%);
+  background: var(--accent);
+}
+
+.transport {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--line);
+}
+
+.dropZone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  flex: 1;
+  border: 0.5px dashed var(--line);
+}
+
+.dropZoneActive {
+  border-color: var(--accent);
+}
+
+.options {
+  display: flex;
+  gap: 24px;
+}

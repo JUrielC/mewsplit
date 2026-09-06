@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mewsplit"
+version = "0.1.0"
+description = "Separación de stems con detección de acordes"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+# Versiones fijadas: la instalación de referencia es macOS ARM64.
+# Los pesos de los modelos NO se empaquetan, se descargan en tiempo de ejecución.
+dependencies = [
+  "torch==2.14.0",
+  "torchaudio==2.11.0",
+  "audio-separator==0.47.0",
+  "onnxruntime==1.29.0",
+  "transformers==5.16.1",
+  "soundfile==0.14.0",
+  "numpy==2.4.6",
+  "librosa==0.11.0",
+  "scipy==1.17.1",
+  "rotary-embedding-torch==0.6.5",
+  "fastapi==0.141.1",
+  "uvicorn[standard]==0.52.4",
+  "python-multipart==0.0.32",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==9.1.1",
+  "httpx==0.28.1",
+  "ruff==0.16.6",
+]
+
+[project.scripts]
+mewsplit-api = "mewsplit.api:run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["mewsplit"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Las pruebas que cargan modelos reales se marcan `slow` y no corren por defecto.
+addopts = "-m 'not slow'"
+markers = ["slow: requiere descargar modelos y separar audio de verdad"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

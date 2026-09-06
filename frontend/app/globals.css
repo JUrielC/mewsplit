@@ -1,0 +1,120 @@
+/*
+ * Minimalismo editorial en modo oscuro.
+ * Referencias: Teenage Engineering, Dieter Rams, vista de arreglo de Ableton.
+ *
+ * Reglas que no se negocian:
+ * - Cero esquinas redondeadas, sombras, gradientes, glow o neón.
+ * - Sin cajas: la separación son líneas de 0.5px.
+ * - El acento SOLO indica estado. Si hay varios elementos encendidos a la
+ *   vez, es un bug.
+ * - La jerarquía viene del espaciado, no del tamaño ni del peso.
+ * - Ancho completo: en una herramienta multipista el ancho horizontal ES la
+ *   resolución temporal. Nada de max-width de contenedor de lectura.
+ */
+
+:root {
+  --bg-app: #101114;
+  --bg-hover: #16181d;
+  --bg-active: #1d1f26;
+
+  --line: rgba(255, 255, 255, 0.12);
+  --line-faint: rgba(255, 255, 255, 0.06);
+
+  --text: #e2e2e5;
+  --text-soft: #747781;
+  --text-dim: #3e4149;
+
+  --accent: #ff4d00;
+
+  --step: 8px;
+  --tracking: 0.14em;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
+  text-shadow: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+html,
+body {
+  height: 100%;
+  background: var(--bg-app);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* Etiquetas: sans, 11-13px, versalitas espaciadas. */
+.label {
+  font-size: 11px;
+  letter-spacing: var(--tracking);
+  text-transform: lowercase;
+  color: var(--text-soft);
+}
+
+/* Datos (tiempos, dB, acordes): siempre monoespaciada. */
+.data {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.active {
+  color: var(--accent);
+}
+
+.rule {
+  border: none;
+  border-top: 0.5px solid var(--line);
+}
+
+.rule-faint {
+  border: none;
+  border-top: 0.5px solid var(--line-faint);
+}
+
+.workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100%;
+  padding: calc(var(--step) * 2) calc(var(--step) * 5);
+  gap: calc(var(--step) * 2);
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: var(--step);
+  border-bottom: 0.5px solid var(--line);
+}
+
+.brand {
+  font-size: 15px;
+  letter-spacing: 0.18em;
+  font-weight: 500;
+}
+
+/* El eje temporal es compartido por regla, formas de onda y acordes.
+   Cualquier desalineación entre ellos se lee como un bug de sincronía. */
+.axis {
+  position: relative;
+  width: 100%;
+}
