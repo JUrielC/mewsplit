@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { downloadStem, type Job } from "@/lib/api";
 import { Mixer, peaks as computePeaks, type TrackState } from "@/lib/audio";
@@ -84,17 +84,16 @@ export function Studio({ job }: Props) {
     };
   }, [job.id, job.stems]);
 
-  // Sigue al playhead cuando se sale de la vista. No se limita a la
-  // reproducción: en pausa `time` solo cambia por un salto explícito (clic o
-  // flechas), así que no pelea con el scroll manual.
+  
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller || duration <= 0) return;
 
     const x = (time / duration) * scroller.scrollWidth;
     const visible = scroller.clientWidth;
-    if (x < scroller.scrollLeft || x > scroller.scrollLeft + visible - 40) {
-      scroller.scrollLeft = x - visible / 2;
+    const ahead = visible * 0.85;
+    if (x < scroller.scrollLeft || x > scroller.scrollLeft + ahead) {
+      scroller.scrollLeft = x - visible * 0.25;
     }
   }, [time, duration]);
 
@@ -123,6 +122,34 @@ export function Studio({ job }: Props) {
     withMixer((m) => m.seek(ratio * duration));
   }
 
+  const [saving, setSaving] = useState(false);
+
+  const saveMix = useCallback(async () => {
+    const mixer = mixerRef.current;
+    if (!mixer || saving) return;
+
+    setSaving(true);
+    try {
+      const blob = await mixer.renderMix();
+      if (!blob) return;
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${saveName(job, soloed)}.wav`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setSaving(false);
+    }
+  }, [saving, job, soloed]);
+
+  const saveLabel = saving
+    ? "rendering…"
+    : soloed.length > 0
+      ? `save mix · ${soloed.join(" + ")}`
+      : "save mix";
+
   if (error) {
     return <p className="label">no se pudieron cargar los stems: {error}</p>;
   }
@@ -142,7 +169,17 @@ export function Studio({ job }: Props) {
             withMixer((m) => (picked.length === 0 ? m.reset() : m.isolate(picked)))
           }
         />
-        <ZoomControl zoom={zoom} onZoom={setZoom} />
+        <div className={styles.toolbarRight}>
+          <button
+            type="button"
+            className={`label ${styles.saveMix}`}
+            onClick={saveMix}
+            disabled={saving || tracks.length === 0}
+          >
+            {saveLabel}
+          </button>
+          <ZoomControl zoom={zoom} onZoom={setZoom} />
+        </div>
       </div>
 
       <div className={styles.board}>
@@ -208,4 +245,11 @@ function buildWaveforms(mixer: Mixer, names: string[]): Record<string, Float32Ar
     if (buffer) output[name] = computePeaks(buffer, WAVEFORM_BLOCKS, mixer.duration);
   }
   return output;
+}
+
+/** Nombre del archivo descargado: "título - stems seleccionados". */
+function saveName(job: Job, soloed: string[]): string {
+  const base = job.filename?.replace(/\.[^.]+$/, "") ?? job.id;
+  if (soloed.length === 0) return `${base} - full mix`;
+  return `${base} - ${soloed.join("+")}`;
 }

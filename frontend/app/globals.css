@@ -110,6 +110,7 @@ button {
   font-size: 15px;
   letter-spacing: 0.18em;
   font-weight: 500;
+  cursor: pointer;
 }
 
 /* El eje temporal es compartido por regla, formas de onda y acordes.

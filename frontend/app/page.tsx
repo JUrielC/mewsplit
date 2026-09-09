@@ -29,7 +29,9 @@ export default function Page() {
   return (
     <main className="workspace">
       <header className="header">
-        <span className="brand">mewsplit</span>
+        <button type="button" className="brand" onClick={() => window.location.reload()}>
+          mewsplit
+        </button>
         <span className="data">
           {job?.duration ? `${job.duration.toFixed(1)}s` : ""}
           {job?.device ? ` · ${job.device}` : ""}

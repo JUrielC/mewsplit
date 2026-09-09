@@ -36,6 +36,21 @@
   border-bottom: 0.5px solid var(--line);
 }
 
+.toolbarRight {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.saveMix {
+  white-space: nowrap;
+}
+
+.saveMix:disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
 .modes {
   display: flex;
   gap: 24px;

@@ -353,6 +353,98 @@ export class Mixer {
     }
     this.sources = [];
   }
+
+  /**
+   * Renderiza offline la mezcla actual (respetando solo/mute/volume) a un
+   * Blob WAV de 16 bits. Devuelve `null` si no hay pistas cargadas.
+   *
+   * No toca el contexto de reproducción: usa un OfflineAudioContext aparte.
+   */
+  async renderMix(): Promise<Blob | null> {
+    if (this.tracks.size === 0) return null;
+
+    const soloActive = this.hasSolo();
+    const audible = [...this.tracks.values()].filter(
+      (t) => !t.muted && (!soloActive || t.soloed),
+    );
+
+    // Si nada está audible, mezcla todo (equivale a "nada seleccionado").
+    const toRender = audible.length > 0 ? audible : [...this.tracks.values()];
+
+    const sampleRate = toRender[0].buffer.sampleRate;
+    const length = Math.round(this.totalDuration * sampleRate);
+    const channels = 2;
+    const offline = new OfflineAudioContext(channels, length, sampleRate);
+
+    for (const track of toRender) {
+      const source = offline.createBufferSource();
+      source.buffer = track.buffer;
+      const gain = offline.createGain();
+      gain.gain.value = track.volume;
+      source.connect(gain).connect(offline.destination);
+      source.start(0);
+    }
+
+    const rendered = await offline.startRendering();
+    return encodeWav(rendered);
+  }
+}
+
+/**
+ * Codifica un AudioBuffer a WAV PCM 16-bit little-endian.
+ * Mezcla todos los canales a estéreo (o mono si solo hay uno).
+ */
+function encodeWav(buffer: AudioBuffer): Blob {
+  const numChannels = Math.min(buffer.numberOfChannels, 2);
+  const sampleRate = buffer.sampleRate;
+  const length = buffer.length;
+  const bytesPerSample = 2;
+  const dataSize = length * numChannels * bytesPerSample;
+
+  const headerSize = 44;
+  const arrayBuffer = new ArrayBuffer(headerSize + dataSize);
+  const view = new DataView(arrayBuffer);
+
+  // RIFF header
+  writeString(view, 0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(view, 8, "WAVE");
+
+  // fmt chunk
+  writeString(view, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * numChannels * bytesPerSample, true);
+  view.setUint16(32, numChannels * bytesPerSample, true);
+  view.setUint16(34, bytesPerSample * 8, true);
+
+  // data chunk
+  writeString(view, 36, "data");
+  view.setUint32(40, dataSize, true);
+
+  const channels: Float32Array[] = [];
+  for (let ch = 0; ch < numChannels; ch++) {
+    channels.push(buffer.getChannelData(ch));
+  }
+
+  let offset = headerSize;
+  for (let i = 0; i < length; i++) {
+    for (let ch = 0; ch < numChannels; ch++) {
+      const sample = Math.max(-1, Math.min(1, channels[ch][i]));
+      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+      offset += bytesPerSample;
+    }
+  }
+
+  return new Blob([arrayBuffer], { type: "audio/wav" });
+}
+
+function writeString(view: DataView, offset: number, str: string): void {
+  for (let i = 0; i < str.length; i++) {
+    view.setUint8(offset + i, str.charCodeAt(i));
+  }
 }
 
 /**
