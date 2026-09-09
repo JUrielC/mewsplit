@@ -20,7 +20,12 @@ export function formatTime(seconds: number): string {
 export function Transport({ playing, time, duration, currentChord, onToggle }: Props) {
   return (
     <div className={styles.transport}>
-      <button type="button" className="label" onClick={onToggle}>
+      <button
+        type="button"
+        className="label"
+        onClick={onToggle}
+        title="Espacio para reproducir o pausar"
+      >
         {playing ? "pausa" : "reproducir"}
       </button>
 
@@ -31,6 +36,8 @@ export function Transport({ playing, time, duration, currentChord, onToggle }: P
       <span className={`data ${currentChord && currentChord !== "N" ? "active" : ""}`}>
         {currentChord && currentChord !== "N" ? currentChord : "—"}
       </span>
+
+      <span className={styles.hint}>espacio · ←→ 1s · ⇧←→ 5s</span>
     </div>
   );
 }

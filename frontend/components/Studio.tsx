@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 
 import { downloadStem, type Job } from "@/lib/api";
 import { Mixer, peaks as computePeaks, type TrackState } from "@/lib/audio";
+import { useTransportKeys } from "@/lib/useTransportKeys";
 
 import { ChordLane } from "./ChordLane";
 import { PracticeModes } from "./PracticeModes";
@@ -83,18 +84,19 @@ export function Studio({ job }: Props) {
     };
   }, [job.id, job.stems]);
 
-  // Sigue al playhead solo cuando se sale de la vista, para no pelearse con
-  // el scroll manual mientras suena.
+  // Sigue al playhead cuando se sale de la vista. No se limita a la
+  // reproducción: en pausa `time` solo cambia por un salto explícito (clic o
+  // flechas), así que no pelea con el scroll manual.
   useEffect(() => {
     const scroller = scrollerRef.current;
-    if (!scroller || !playing || duration <= 0) return;
+    if (!scroller || duration <= 0) return;
 
     const x = (time / duration) * scroller.scrollWidth;
     const visible = scroller.clientWidth;
     if (x < scroller.scrollLeft || x > scroller.scrollLeft + visible - 40) {
       scroller.scrollLeft = x - visible / 2;
     }
-  }, [time, playing, duration]);
+  }, [time, duration]);
 
   const currentChord = useMemo(() => {
     return job.chords.find((c) => time >= c.start && time < c.end)?.chord ?? null;
@@ -109,6 +111,11 @@ export function Studio({ job }: Props) {
     action(mixer);
     setTracks(mixer.state());
   }
+
+  useTransportKeys({
+    onToggle: () => withMixer((m) => void m.toggle()),
+    onNudge: (seconds) => withMixer((m) => m.seek(m.time + seconds)),
+  });
 
   function seekFromClick(event: React.MouseEvent<HTMLDivElement>) {
     const canvas = event.currentTarget.getBoundingClientRect();

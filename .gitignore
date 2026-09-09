@@ -64,3 +64,4 @@ dist/
 # Directorios locales / No versionados
 pipeline/
 design/
+feature-basic-pitch.md

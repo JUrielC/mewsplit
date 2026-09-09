@@ -27,6 +27,48 @@ from pydantic import BaseModel
 
 from mewsplit.core import DEFAULT_MODEL, SIX_STEM_MODEL, Analysis, Chord, analyze, get_device
 
+
+def load_env_file(path: Path) -> dict[str, str]:
+    """
+    Carga pares KEY=VALUE de un .env en el entorno, SIN pisar lo ya definido.
+
+    El entorno real gana sobre el archivo, así que Tauri y CI pueden imponer
+    sus valores y el archivo solo cubre el hueco del desarrollo local.
+
+    Devuelve lo que leyó del archivo (no lo que quedó en el entorno), para
+    poder probarlo sin depender de os.environ.
+    """
+    leidos: dict[str, str] = {}
+    if not path.exists():
+        return leidos
+
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].lstrip()
+
+        key, sep, value = line.partition("=")
+        if not sep:
+            continue
+
+        key, value = key.strip(), value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+
+        leidos[key] = value
+        os.environ.setdefault(key, value)
+
+    return leidos
+
+
+# Fuente única de puerto y token en desarrollo: frontend/next.config.ts lee
+# ESTE MISMO archivo. Tenerlos en dos sitios era la causa de que el frontend
+# apuntara a un puerto donde ya no había nadie.
+ENV_FILE = Path(os.environ.get("MEWSPLIT_ENV_FILE", Path(__file__).resolve().parent.parent / ".env"))
+load_env_file(ENV_FILE)
+
 # Token aleatorio por arranque: en localhost cualquier proceso de la máquina
 # puede hablarle al servidor. Se lo pasamos al frontend por variable de entorno.
 TOKEN = os.environ.get("MEWSPLIT_TOKEN") or secrets.token_urlsafe(32)

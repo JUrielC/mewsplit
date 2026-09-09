@@ -273,6 +273,15 @@
   border-top: 0.5px solid var(--line);
 }
 
+/* Pista de atajos: sin ella el teclado es invisible. Al final de la fila y
+   en el gris más apagado, para que no compita con los datos. */
+.hint {
+  margin-left: auto;
+  font-size: 10px;
+  letter-spacing: var(--tracking);
+  color: var(--text-dim);
+}
+
 .dropZone {
   display: flex;
   flex-direction: column;

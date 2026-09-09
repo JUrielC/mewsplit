@@ -19,16 +19,14 @@ uv venv .venv --python 3.11 && uv pip install -e ".[dev]"
 .venv/bin/pytest                      # 27 pruebas, no descargan modelos
 .venv/bin/pytest -m slow              # las que separan audio de verdad
 .venv/bin/pytest tests/test_core.py::test_stopwatch_records_the_stage
+cp .env.example .env                  # una vez: fija puerto y token de desarrollo
 .venv/bin/python -m mewsplit.api      # imprime MEWSPLIT_READY port=<n> token=<t>
-# En dev fija ambos, o el puerto cambia en cada reinicio y hay que rehacer .env.local:
-MEWSPLIT_PORT=8000 MEWSPLIT_TOKEN=dev-token .venv/bin/python -m mewsplit.api
 .venv/bin/python cli.py cancion.mp3 [--6-stems] [--skip-chords] [--simple-chords]
 .venv/bin/python bench.py cancion.mp3
 
 # Frontend
 cd frontend
-cp .env.example .env.local            # ya trae el puerto y token de dev
-npm install && npm run dev
+npm install && npm run dev            # lee backend/.env, no necesita .env.local
 npm run typecheck && npm run build
 
 # Contrato tipado: regenerar tras CUALQUIER cambio en los modelos de api.py
@@ -78,6 +76,10 @@ Dos contratos que hay que respetar al tocar los extremos:
 - **Configuración en el cliente**: Tauri inyecta `window.__MEWSPLIT__` como
   script de inicialización antes de que corra el JS de la página; en web los
   valores salen de `NEXT_PUBLIC_MEWSPLIT_*`. Todo eso está en `lib/api.ts`.
+- **Puerto y token en desarrollo**: `backend/.env` es la FUENTE ÚNICA. Lo leen
+  `api.py` al arrancar y `frontend/next.config.ts` al levantar `next dev`.
+  El entorno explícito gana sobre el archivo, y en la build estática de Tauri
+  no se incrusta nada: el token llegaría dentro del binario distribuido.
 
 La API nunca devuelve rutas del disco del servidor: los stems se piden por
 nombre a `/jobs/{id}/stems/{name}`.
@@ -133,6 +135,13 @@ tenía escrita la lista `["bass","drums","other"]`: con 4 stems acertaba por
 casualidad y con `--6-stems` silenciaba también guitarra y piano. Defínelos
 por lo que excluyen (`names.filter(n => n !== "vocals")`), no por lo que
 incluyen.
+
+**Puerto y token duplicados en dos archivos se desincronizan solos.** Cuando
+`backend/.env` y `frontend/.env.local` eran archivos distintos, cualquier
+reinicio del backend sin variables tomaba un puerto aleatorio y el frontend
+seguía llamando al viejo: "failed to fetch" sin más pista. Ahora `next.config.ts`
+lee `backend/.env`. No vuelvas a crear `frontend/.env.local` salvo para apuntar
+a un backend remoto.
 
 **Un solo campo de progreso no puede describir dos ramas paralelas.** `stage`
 y `progress` los compartían separación y acordes: como los acordes acaban en
@@ -199,6 +208,11 @@ fuente de verdad para el frontend.
 - Etiquetas en `Inter` 11-13px con `letter-spacing: 0.14em`.
   Datos (tiempos, dB, acordes) en `JetBrains Mono`.
 - La jerarquía viene del espaciado, no del tamaño ni del peso.
+- Atajos de teclado en `lib/useTransportKeys.ts`: espacio reproduce/pausa,
+  flechas mueven 1s (5s con Shift). `resolveShortcut` está separada y es pura
+  para poder probar los casos raros sin navegador. El `preventDefault` no es
+  opcional: sin él el espacio hace scroll de página Y activa el botón que
+  tenga el foco, alternando dos veces.
 - Ancho completo: en una herramienta multipista el ancho horizontal **es** la
   resolución temporal. No aplicar `max-width` de contenedor de lectura.
 - La línea de acordes comparte eje exacto con las formas de onda. Cada acorde
