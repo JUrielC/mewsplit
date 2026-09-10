@@ -37,7 +37,7 @@ export function Transport({ playing, time, duration, currentChord, onToggle }: P
         {currentChord && currentChord !== "N" ? currentChord : "—"}
       </span>
 
-      <span className={styles.hint}>espacio · ←→ 1s · ⇧←→ 5s</span>
+      <span className={styles.hint}>espacio · ←→ 1s · ⇧←→ 5s · 0-9 saltar</span>
     </div>
   );
 }

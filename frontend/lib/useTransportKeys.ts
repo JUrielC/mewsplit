@@ -9,7 +9,10 @@ const NUDGE_LARGE = 5;
 /** Campos que necesitan sus propias teclas y no deben perderlas. */
 const EDITABLE = new Set(["INPUT", "TEXTAREA", "SELECT"]);
 
-export type Shortcut = { action: "toggle" } | { action: "nudge"; seconds: number };
+export type Shortcut =
+  | { action: "toggle" }
+  | { action: "nudge"; seconds: number }
+  | { action: "jump"; fraction: number };
 
 interface KeyLike {
   key: string;
@@ -42,26 +45,34 @@ export function resolveShortcut(event: KeyLike): Shortcut | null {
       return { action: "nudge", seconds: -seconds };
     case "ArrowRight":
       return { action: "nudge", seconds };
-    default:
+    default: {
+      // 0-9: salta al 0%-90% de la duración, estilo YouTube.
+      const digit = Number(event.key);
+      if (event.key.length === 1 && digit >= 0 && digit <= 9) {
+        return { action: "jump", fraction: digit / 10 };
+      }
       return null;
+    }
   }
 }
 
 interface Options {
   onToggle: () => void;
   onNudge: (seconds: number) => void;
+  onJump: (fraction: number) => void;
 }
 
 /**
- * Atajos de transporte: espacio reproduce/pausa, flechas mueven el playhead.
+ * Atajos de transporte: espacio reproduce/pausa, flechas mueven el playhead,
+ * 0-9 salta al 0%-90% de la duración.
  *
  * Se registra UN solo listener y los callbacks viajan por ref: `Studio` se
  * repinta en cada frame mientras suena, así que depender de ellos en el
  * useEffect suscribiría y desuscribiría 60 veces por segundo.
  */
-export function useTransportKeys({ onToggle, onNudge }: Options) {
-  const handlers = useRef({ onToggle, onNudge });
-  handlers.current = { onToggle, onNudge };
+export function useTransportKeys({ onToggle, onNudge, onJump }: Options) {
+  const handlers = useRef({ onToggle, onNudge, onJump });
+  handlers.current = { onToggle, onNudge, onJump };
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
@@ -74,7 +85,8 @@ export function useTransportKeys({ onToggle, onNudge }: Options) {
       event.preventDefault();
 
       if (shortcut.action === "toggle") handlers.current.onToggle();
-      else handlers.current.onNudge(shortcut.seconds);
+      else if (shortcut.action === "nudge") handlers.current.onNudge(shortcut.seconds);
+      else handlers.current.onJump(shortcut.fraction);
     }
 
     window.addEventListener("keydown", handleKey);

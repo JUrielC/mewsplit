@@ -14,7 +14,7 @@
  */
 
 .studio {
-  --row-height: 58px;
+  --row-height: 87px;
   --chord-height: 44px;
   --col-name: 96px;
   --col-readout: 56px;
@@ -109,7 +109,7 @@
 
 .name {
   text-align: left;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: var(--tracking);
   text-transform: lowercase;
   color: var(--text-soft);
@@ -121,7 +121,7 @@
 
 .readout {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: var(--text-soft);
   text-align: right;
@@ -161,7 +161,7 @@
 }
 
 .toggle {
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: var(--tracking);
   color: var(--text-dim);
 }
@@ -208,7 +208,7 @@
   white-space: nowrap;
   border-left: 0.5px solid var(--line-faint);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-dim);
   transition: background-color 80ms linear;
 }
@@ -246,7 +246,7 @@
 .waveform {
   display: block;
   width: 100%;
-  height: 38px;
+  height: 57px;
 }
 
 /*
@@ -292,7 +292,7 @@
    en el gris más apagado, para que no compita con los datos. */
 .hint {
   margin-left: auto;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: var(--tracking);
   color: var(--text-dim);
 }

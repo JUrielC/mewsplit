@@ -26,7 +26,7 @@ const WAVEFORM_BLOCKS = 8000;
 const DEFAULT_ZOOM = 8;
 
 /** Orden fijo de arriba abajo; los stems opcionales van al final. */
-const ORDER = ["vocals", "bass", "drums", "other", "guitar", "piano"];
+const ORDER = ["vocals", "bass", "drums", "guitar", "other", "piano"];
 
 interface Props {
   job: Job;
@@ -114,6 +114,7 @@ export function Studio({ job }: Props) {
   useTransportKeys({
     onToggle: () => withMixer((m) => void m.toggle()),
     onNudge: (seconds) => withMixer((m) => m.seek(m.time + seconds)),
+    onJump: (fraction) => withMixer((m) => m.seek(fraction * duration)),
   });
 
   function seekFromClick(event: React.MouseEvent<HTMLDivElement>) {

@@ -21,8 +21,8 @@
   --line-faint: rgba(255, 255, 255, 0.06);
 
   --text: #e2e2e5;
-  --text-soft: #747781;
-  --text-dim: #3e4149;
+  --text-soft: #a8acb6;
+  --text-dim: #747a88;
 
   --accent: #ff4d00;
 
@@ -48,7 +48,7 @@ body {
   background: var(--bg-app);
   color: var(--text);
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: 13px;
   overflow: hidden;
 }
 
@@ -60,9 +60,9 @@ button {
   cursor: pointer;
 }
 
-/* Etiquetas: sans, 11-13px, versalitas espaciadas. */
+/* Etiquetas: sans, versalitas espaciadas. */
 .label {
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: var(--tracking);
   text-transform: lowercase;
   color: var(--text-soft);
@@ -71,7 +71,7 @@ button {
 /* Datos (tiempos, dB, acordes): siempre monoespaciada. */
 .data {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -107,7 +107,7 @@ button {
 }
 
 .brand {
-  font-size: 15px;
+  font-size: 17px;
   letter-spacing: 0.18em;
   font-weight: 500;
   cursor: pointer;
