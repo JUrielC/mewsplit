@@ -1,5 +1,7 @@
 "use client";
 
+import { formatChord } from "@/lib/chords";
+
 import styles from "./studio.module.css";
 
 interface Props {
@@ -34,7 +36,7 @@ export function Transport({ playing, time, duration, currentChord, onToggle }: P
       </span>
 
       <span className={`data ${currentChord && currentChord !== "N" ? "active" : ""}`}>
-        {currentChord && currentChord !== "N" ? currentChord : "—"}
+        {currentChord && currentChord !== "N" ? formatChord(currentChord) : "—"}
       </span>
 
       <span className={styles.hint}>espacio · ←→ 1s · ⇧←→ 5s · 0-9 saltar</span>

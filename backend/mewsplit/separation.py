@@ -16,6 +16,8 @@ import numpy as np
 import soundfile as sf
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from mewsplit.core import Stopwatch
 
 # Verificado con `audio-separator --list_models`. Demucs v4 estándar, 4 stems.
@@ -35,6 +37,7 @@ def separate(
     model: str = DEFAULT_MODEL,
     model_cache_dir: str | Path | None = None,
     timer: "Stopwatch | None" = None,
+    on_progress: "Callable[[float], None] | None" = None,
 ) -> dict[str, Path]:
     """
     Separa un archivo de audio en stems.
@@ -43,6 +46,8 @@ def separate(
 
     `model_cache_dir` importa: por defecto `audio-separator` guarda los
     checkpoints en /tmp, que macOS purga.
+
+    `on_progress` recibe un float 0..1 con el avance de la separación.
     """
     from audio_separator.separator import Separator
 
@@ -50,7 +55,7 @@ def separate(
     output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    options = {"output_dir": str(output_dir), "output_format": "wav"}
+    options: dict = {"output_dir": str(output_dir), "output_format": "wav"}
     if model_cache_dir is not None:
         cache = Path(model_cache_dir).expanduser().resolve()
         cache.mkdir(parents=True, exist_ok=True)
@@ -62,8 +67,16 @@ def separate(
     with _timed(timer, "load_separation_model"):
         separator.load_model(model_filename=model)
 
-    with _timed(timer, "separation"):
-        produced = separator.separate(str(audio_path))
+    # Demucs hardcodea set_progress_bar=None dentro de demix_demucs, así que
+    # la única forma de capturar el progreso es parchear apply_model para que
+    # inyecte nuestro callback. Se restaura al terminar.
+    patched = _patch_progress(on_progress)
+
+    try:
+        with _timed(timer, "separation"):
+            produced = separator.separate(str(audio_path))
+    finally:
+        patched.restore()
 
     return _map_stems(produced, output_dir)
 
@@ -145,3 +158,48 @@ def build_instrumental(
 
 def _timed(timer, label: str):
     return timer.measure(label) if timer is not None else nullcontext()
+
+
+class _patch_progress:
+    """
+    Parchea temporalmente `apply_model` en el módulo de demucs para inyectar
+    un callback de progreso. Necesario porque `demix_demucs` hardcodea
+    `set_progress_bar=None`.
+
+    Hay que parchear los DOS módulos: `demucs_separator` hace
+    `from ...apply import apply_model` y guarda su propia referencia, así que
+    parchear solo `apply` no alcanza la llamada de arriba; y `apply` se llama
+    a sí mismo recursivamente por el nombre global de su módulo.
+    """
+
+    def __init__(self, on_progress: "Callable[[float], None] | None") -> None:
+        self._original = None
+        self._modules: list = []
+
+        if on_progress is None:
+            return
+
+        try:
+            import audio_separator.separator.architectures.demucs_separator as demucs_separator
+            import audio_separator.separator.uvr_lib_v5.demucs.apply as demucs_apply
+        except ImportError:
+            return
+
+        original = demucs_apply.apply_model
+        self._original = original
+        self._modules = [demucs_apply, demucs_separator]
+
+        def patched_apply_model(*args, **kwargs):
+            # Inyectar nuestro callback si la llamada no trae uno propio.
+            if kwargs.get("set_progress_bar") is None:
+                def _hook(base: float, value: float) -> None:
+                    on_progress(min(base + value, 1.0))
+                kwargs["set_progress_bar"] = _hook
+            return original(*args, **kwargs)
+
+        for module in self._modules:
+            module.apply_model = patched_apply_model
+
+    def restore(self) -> None:
+        for module in self._modules:
+            module.apply_model = self._original

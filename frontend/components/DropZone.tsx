@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 
 import styles from "./studio.module.css";
 
@@ -8,6 +8,7 @@ interface Props {
   onFile: (file: File, sixStems: boolean) => void;
   disabled?: boolean;
   message?: string | null;
+  progress?: number | null;
 }
 
 const FORMATS = ".wav,.mp3,.flac,.aiff,.aif,.m4a,.ogg";
@@ -16,7 +17,7 @@ const FORMATS = ".wav,.mp3,.flac,.aiff,.aif,.m4a,.ogg";
  * La elección de 4 o 6 stems se hace aquí, al cargar el audio: es una
  * decisión de separación, no un preset de mezcla.
  */
-export function DropZone({ onFile, disabled, message }: Props) {
+export function DropZone({ onFile, disabled, message, progress }: Props) {
   const [dragging, setDragging] = useState(false);
   const [sixStems, setSixStems] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -44,6 +45,15 @@ export function DropZone({ onFile, disabled, message }: Props) {
         {message ?? "arrastra un audio o pulsa para elegir"}
       </button>
 
+      {progress != null && (
+        <div className={styles.progressTrack}>
+          <div
+            className={styles.progressFill}
+            style={{ "--progress-width": `${Math.round(progress * 100)}%` } as CSSProperties}
+          />
+        </div>
+      )}
+
       <div className={styles.options}>
         <button
           type="button"
@@ -66,3 +76,4 @@ export function DropZone({ onFile, disabled, message }: Props) {
     </div>
   );
 }
+

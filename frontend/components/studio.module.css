@@ -15,7 +15,7 @@
 
 .studio {
   --row-height: 87px;
-  --chord-height: 44px;
+  --chord-height: 88px;
   --col-name: 96px;
   --col-readout: 56px;
   --col-fader: 120px;
@@ -203,12 +203,12 @@
   align-items: center;
   justify-content: flex-start;
   min-width: 0;
-  padding-left: 6px;
+  padding-left: 12px;
   overflow: hidden;
   white-space: nowrap;
   border-left: 0.5px solid var(--line-faint);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 24px;
   color: var(--text-dim);
   transition: background-color 80ms linear;
 }
@@ -309,6 +309,19 @@
 
 .dropZoneActive {
   border-color: var(--accent);
+}
+
+.progressTrack {
+  width: 260px;
+  height: 2px;
+  background: var(--line);
+}
+
+.progressFill {
+  height: 100%;
+  width: var(--progress-width, 0%);
+  background: var(--accent);
+  transition: width 300ms linear;
 }
 
 .options {

@@ -16,14 +16,16 @@ import styles from "./studio.module.css";
 
 /**
  * Muestras por pista. El lienzo se estira con el zoom, así que hace falta
- * resolución de sobra para que a 32× no aparezcan escalones. Se calculan una
- * sola vez al cargar; TrackWaveform está memoizado para no rehacer el trazo
- * en cada frame del playhead.
+ * resolución de sobra para que en los zooms altos no aparezcan escalones:
+ * a 32× esto deja ~750 segmentos por pantalla, cerca de uno cada dos píxeles.
+ * Más allá de 64× el trazo vuelve a engordar, pero ahí ya se está mirando un
+ * puñado de segundos. Se calculan una sola vez al cargar; TrackWaveform está
+ * memoizado para no rehacer el trazo en cada frame del playhead.
  */
-const WAVEFORM_BLOCKS = 8000;
+const WAVEFORM_BLOCKS = 24000;
 
 /** Arranca ampliado: la lectura fina del compás es el caso normal de uso. */
-const DEFAULT_ZOOM = 8;
+const DEFAULT_ZOOM = 32;
 
 /** Orden fijo de arriba abajo; los stems opcionales van al final. */
 const ORDER = ["vocals", "bass", "drums", "guitar", "other", "piano"];

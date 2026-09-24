@@ -150,6 +150,16 @@ y `progress` los compartían separación y acordes: como los acordes acaban en
 separación (~92% del tiempo), y los acordes se anuncian aparte con
 `on_chords`. Si vuelves a meter un identificador de etapa ahí, vuelve el bug.
 
+**El progreso de Demucs se engancha parcheando `apply_model` en DOS módulos.**
+`audio-separator` pasa `set_progress_bar=None` fijo, así que `separation.py`
+lo sustituye mientras dura la separación. `demucs_separator.py` hace
+`from ...apply import apply_model` y guarda su propia referencia: parchear solo
+`apply` no hace nada y la barra se queda en 0% sin ningún error. El avance
+llega de 0.1 a 0.9 y `core` lo cierra en 1.0. El parche es global al proceso:
+dos separaciones simultáneas se pisarían el callback. Si una versión nueva de
+`audio-separator` mueve esos módulos, el `ImportError` desactiva el progreso en
+silencio.
+
 **El mezclador se desincroniza si cada fuente arranca por su cuenta.** Las
 cuatro pistas se programan con el MISMO instante absoluto y el bucle lo hace el
 hilo de audio (`loop`/`loopStart`/`loopEnd`), no `requestAnimationFrame`. rAF
@@ -163,9 +173,6 @@ lo "simplifica", vuelve el desfase.
   otra cosa.
 - **El frontend no se ha probado contra una canción real de punta a punta.**
   Compila y el mezclador está resuelto, pero nadie ha subido un MP3 todavía.
-- **`progress` solo vale 0.0 o 1.0.** Es honesto (no finge avance) pero la
-  barra no se mueve durante la separación. Para granularidad real hay que
-  enganchar el progreso de `audio-separator`, que hoy solo sale por tqdm.
 - **La UI aún no pinta los acordes en cuanto llegan.** El backend ya los
   publica con `chords_ready` a los ~2s; `page.tsx` sigue esperando a `done`
   para montar el `<Studio>`.

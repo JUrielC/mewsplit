@@ -41,7 +41,12 @@ export default function Page() {
       {job?.status === "done" ? (
         <Studio job={job} />
       ) : (
-        <DropZone onFile={analyze} disabled={processing} message={statusMessage(job, processing, error)} />
+        <DropZone
+          onFile={analyze}
+          disabled={processing}
+          message={statusMessage(job, processing, error)}
+          progress={processing && job ? job.progress : null}
+        />
       )}
     </main>
   );

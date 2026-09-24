@@ -1,6 +1,7 @@
 "use client";
 
 import type { Chord } from "@/lib/api";
+import { formatChord } from "@/lib/chords";
 
 import styles from "./studio.module.css";
 
@@ -33,7 +34,7 @@ export function ChordLane({ chords, duration, time, onSeek }: Props) {
             type="button"
             className={`${styles.chord} ${playing ? styles.chordPlaying : ""}`}
             style={{ width: `${width}%` }}
-            title={`${chord.chord} · ${chord.start.toFixed(2)}s`}
+            title={`${formatChord(chord.chord)} · ${chord.start.toFixed(2)}s`}
             onClick={(event) => {
               // Sin esto el clic sube al lienzo, que saltaría a la coordenada
               // pulsada en vez de al inicio exacto del acorde.
@@ -42,7 +43,7 @@ export function ChordLane({ chords, duration, time, onSeek }: Props) {
             }}
           >
             {/* "N" es ausencia de armonía detectable: no se etiqueta. */}
-            {chord.chord === "N" ? "" : chord.chord}
+            {chord.chord === "N" ? "" : formatChord(chord.chord)}
           </button>
         );
       })}

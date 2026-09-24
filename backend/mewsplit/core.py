@@ -154,6 +154,7 @@ def analyze(
             model=model,
             model_cache_dir=model_cache_dir,
             timer=clock,
+            on_progress=report,
         )
         report(1.0)
         return stems
