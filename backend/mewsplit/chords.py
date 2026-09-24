@@ -57,7 +57,7 @@ def detect_chords(
         path = smooth(to_families(probs), SELF_PROBABILITY)
 
     if not large_vocabulary:
-        return path_to_segments(path, lambda family, _: family_label(family))
+        return path_to_segments(path, lambda family, _: simple_label(family))
     return path_to_segments(
         path, lambda family, frames: assign_quality(family, probs[frames], QUALITY_MARGIN)
     )
@@ -126,15 +126,30 @@ QUALITIES = [
     "min", "maj", "dim", "aug", "min6", "maj6", "min7",
     "minmaj7", "maj7", "7", "dim7", "hdim7", "sus2", "sus4",
 ]
-# Familia de cada calidad según su tercera. Los sus no tienen tercera; se
-# cuentan como mayores, que es la convención de MIREX al reducir a majmin.
+# Calidades con tercera menor: es la regla del modo "simples" (mayor/menor).
+# Los sus no tienen tercera; se cuentan como mayores, la convención de MIREX.
 MINOR_THIRD = {"min", "dim", "min6", "min7", "minmaj7", "dim7", "hdim7"}
 LARGE_X, LARGE_N = 168, 169
 
-# Familias: raíz * 2 + (0 mayor, 1 menor), y 24 = sin acorde. Es exactamente
-# el orden de salida del vocabulario reducido.
-FAMILIES = 25
-FAMILY_N = 24
+# Familias de la decodificación. Aumentado y disminuido tienen familia propia:
+# dentro de la mayor y la menor, Viterbi nunca los separaba del acorde vecino
+# y desaparecían (el F#aug de "Evidencias" quedaba absorbido en un F# de 4 s).
+KIND_OF = {
+    "maj": "maj", "maj6": "maj", "maj7": "maj", "7": "maj", "sus2": "maj", "sus4": "maj",
+    "min": "min", "min6": "min", "min7": "min", "minmaj7": "min",
+    "aug": "aug",
+    "dim": "dim", "dim7": "dim", "hdim7": "dim",
+}
+# Índices: los 24 primeros son raíz * 2 + (0 mayor, 1 menor), el mismo orden
+# que el vocabulario reducido; luego 12 aumentados, 12 disminuidos y "sin acorde".
+AUG_OFFSET, DIM_OFFSET = 24, 36
+FAMILIES = 49
+FAMILY_N = 48
+# La familia disminuida junta 3 calidades frente a las 6 de la mayor, así que
+# parte con desventaja; ×3 la compensa. Medido en GuitarSet y Billboard: con
+# ×1 casi no aparecen disminuidos y con ×3 la raíz no empeora. El aumentado
+# con peso extra gana algo de detección pero pierde precisión, así que va ×1.
+DIM_WEIGHT = 3.0
 
 
 def frame_probabilities(
@@ -184,9 +199,27 @@ def frame_probabilities(
     return (total / norm[:, None])[:frames]
 
 
+def family_of(root: int, kind: str) -> int:
+    if kind == "aug":
+        return AUG_OFFSET + root
+    if kind == "dim":
+        return DIM_OFFSET + root
+    return root * 2 + (kind == "min")
+
+
+def kind_of_family(family: int) -> tuple[int, str]:
+    """(raíz, tipo) de una familia. No acepta FAMILY_N."""
+    if family >= DIM_OFFSET:
+        return family - DIM_OFFSET, "dim"
+    if family >= AUG_OFFSET:
+        return family - AUG_OFFSET, "aug"
+    root, minor = divmod(family, 2)
+    return root, "min" if minor else "maj"
+
+
 def to_families(probs: np.ndarray) -> np.ndarray:
     """
-    Suma las probabilidades del vocabulario grande por familia (raíz + tercera).
+    Suma las probabilidades del vocabulario grande por familia.
 
     Con 170 clases, "do mayor" se reparte entre C, C:7, C:maj7, C:maj6...
     Cada una tiene poca masa y el argmax salta entre ellas aunque la armonía
@@ -195,10 +228,12 @@ def to_families(probs: np.ndarray) -> np.ndarray:
     families = np.zeros((probs.shape[0], FAMILIES))
     for index in range(LARGE_X):
         root, quality = divmod(index, len(QUALITIES))
-        families[:, root * 2 + (QUALITIES[quality] in MINOR_THIRD)] += probs[:, index]
+        families[:, family_of(root, KIND_OF[QUALITIES[quality]])] += probs[:, index]
     # "X" (acorde desconocido) no dice nada de la raíz: cuenta como ausencia.
     families[:, FAMILY_N] += probs[:, LARGE_X] + probs[:, LARGE_N]
-    return families
+
+    families[:, DIM_OFFSET:DIM_OFFSET + 12] *= DIM_WEIGHT
+    return families / families.sum(axis=1, keepdims=True)
 
 
 def smooth(probs: np.ndarray, self_probability: float) -> np.ndarray:
@@ -239,25 +274,34 @@ def beat_pool(probs: np.ndarray, beats: np.ndarray) -> tuple[np.ndarray, np.ndar
 def family_label(family: int) -> str:
     if family == FAMILY_N:
         return "N"
-    root, minor = divmod(family, 2)
-    return f"{ROOTS[root]}:min" if minor else ROOTS[root]
+    root, kind = kind_of_family(family)
+    return ROOTS[root] if kind == "maj" else f"{ROOTS[root]}:{kind}"
+
+
+def simple_label(family: int) -> str:
+    """Solo mayor o menor, según la tercera: el aumentado es mayor, el disminuido menor."""
+    if family == FAMILY_N:
+        return "N"
+    root, kind = kind_of_family(family)
+    return f"{ROOTS[root]}:min" if kind in ("min", "dim") else ROOTS[root]
 
 
 def assign_quality(family: int, large_probs: np.ndarray, margin: float) -> str:
     """
     Calidad de un segmento cuya familia ya está decidida.
 
-    Suma la masa de cada calidad compatible (misma raíz, misma tercera) en
+    Suma la masa de cada calidad compatible (misma raíz, misma familia) en
     todo el segmento. La tríada gana salvo que otra la supere por `margin`:
     así una séptima necesita evidencia sostenida, no un par de frames.
     """
     if family == FAMILY_N:
         return "N"
-    root, minor = divmod(family, 2)
+    root, kind = kind_of_family(family)
     mass = large_probs.sum(axis=0)
 
-    triad = "min" if minor else "maj"
-    compatible = [q for q in QUALITIES if (q in MINOR_THIRD) == bool(minor)]
+    # La tríada de cada familia se llama igual que la familia: maj, min, aug, dim.
+    triad = kind
+    compatible = [q for q in QUALITIES if KIND_OF[q] == kind]
     scores = {q: mass[root * len(QUALITIES) + QUALITIES.index(q)] for q in compatible}
     best = max(scores, key=scores.get)
 

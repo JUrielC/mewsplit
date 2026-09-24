@@ -14,7 +14,9 @@ from mewsplit.chords import (
     chord_at,
     condense,
     family_label,
+    family_of,
     path_to_segments,
+    simple_label,
     smooth,
     to_families,
 )
@@ -83,8 +85,32 @@ def test_families_pool_the_mass_split_among_qualities():
 
 
 def test_families_count_the_third_not_the_extension():
-    families = to_families(_large(A_min7=0.6, A_hdim7=0.4))
+    families = to_families(_large(A_min7=0.6, A_min6=0.4))
     assert family_label(int(families.argmax())) == "A:min"
+
+
+def test_augmented_has_its_own_family():
+    """Dentro de la familia mayor, un aumentado nunca se separaba de su vecino."""
+    families = to_families(_large(C_maj=0.4, C_aug=0.6))
+    assert family_label(int(families.argmax())) == "C:aug"
+
+
+def test_diminished_family_is_weighted_against_its_fewer_classes():
+    """Sin el peso, 0.3 de m7b5 perdería contra 0.7 de menor; con ×3 gana."""
+    families = to_families(_large(A_min=0.7, A_hdim7=0.3))
+    assert family_label(int(families.argmax())) == "A:dim"
+    assert families.sum() == pytest.approx(1.0)
+
+
+def test_simple_label_folds_aug_and_dim_by_their_third():
+    assert simple_label(family_of(0, "aug")) == "C"
+    assert simple_label(family_of(9, "dim")) == "A:min"
+    assert simple_label(FAMILY_N) == "N"
+
+
+def test_quality_inside_the_diminished_family():
+    frames = np.vstack([_large(A_dim=0.1, A_hdim7=0.9)] * 4)
+    assert assign_quality(family_of(9, "dim"), frames, margin=3.0) == "A:hdim7"
 
 
 def test_smoothing_removes_a_one_frame_blip():

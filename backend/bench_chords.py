@@ -36,6 +36,8 @@ import mir_eval
 import numpy as np
 
 from mewsplit.chords import (
+    FAMILIES,
+    FAMILY_N,
     _load,
     assign_quality,
     beat_pool,
@@ -60,6 +62,15 @@ Detector = Callable[[Path], list[dict]]
 @cache
 def _probs(path: Path, large: bool, overlap: bool) -> np.ndarray:
     return frame_probabilities(path, large_vocabulary=large, overlap=overlap)
+
+
+def _small_families(path: Path, overlap: bool) -> np.ndarray:
+    """El vocabulario de 25 al orden de familias: mismos 24 primeros, "N" al final."""
+    small = _probs(path, False, overlap)
+    families = np.zeros((small.shape[0], FAMILIES))
+    families[:, :24] = small[:, :24]
+    families[:, FAMILY_N] = small[:, 24]
+    return families
 
 
 @cache
@@ -94,9 +105,9 @@ def decoder(
         if source == "large":
             families = to_families(large)
         elif source == "small":
-            families = _probs(path, False, overlap)
+            families = _small_families(path, overlap)
         else:
-            families = (to_families(large) + _probs(path, False, overlap)) / 2.0
+            families = (to_families(large) + _small_families(path, overlap)) / 2.0
 
         if beats:
             pooled, owner = beat_pool(families, _beats(path))

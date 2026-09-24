@@ -16,7 +16,7 @@ con marcas de tiempo, y un mezclador para escuchar con volúmenes por pista.
 # Backend
 cd backend
 uv venv .venv --python 3.11 && uv pip install -e ".[dev]"
-.venv/bin/pytest                      # 46 pruebas, no descargan modelos
+.venv/bin/pytest                      # 50 pruebas, no descargan modelos
 .venv/bin/pytest -m slow              # las que separan audio de verdad
 .venv/bin/pytest tests/test_core.py::test_stopwatch_records_the_stage
 cp .env.example .env                  # una vez: fija puerto y token de desarrollo
@@ -107,13 +107,14 @@ ajustar y 04-05 para validar). En validación, frente al `predict()` crudo:
 | | root | majmin | sevenths | fantasmas/min | segmentos/min |
 |---|---|---|---|---|---|
 | `predict()` | 0.722 | 0.706 | 0.569 | 8.60 | 35.9 (ref 23.6) |
-| actual | 0.737 | 0.718 | 0.615 | 0.16 | 23.8 |
+| actual | 0.737 | 0.716 | 0.612 | 0.16 | 23.7 |
 
 Las piezas, en orden, y qué aporta cada una:
 1. Ventanas de 10 s solapadas a medio bloque: la única que mejora la raíz
    (+1.1 pt). BTC no tiene contexto entre bloques.
-2. Masa de las 170 clases sumada por familia (raíz + tercera): C, C7, Cmaj7
-   dejan de competir entre sí.
+2. Masa de las 170 clases sumada por familia: C, C7, Cmaj7 dejan de competir
+   entre sí. Mayor y menor agrupan por tercera; aumentado y disminuido tienen
+   familia propia (ver abajo).
 3. Viterbi con `SELF_PROBABILITY = 0.99`: −98% de fantasmas. Da casi igual
    entre 0.9 y 0.995, no es un ajuste frágil.
 4. Calidad por segmento con `QUALITY_MARGIN = 3`: una séptima se muestra solo
@@ -123,6 +124,34 @@ Las piezas, en orden, y qué aporta cada una:
    elijas el margen por la métrica `sevenths`: sube sola al dejar de predecir
    séptimas.
 
+**Aumentado y disminuido, familia propia.** Dentro de la mayor o la menor,
+Viterbi nunca los separaba del acorde vecino: el `F#aug` de "Evidencias"
+quedaba absorbido en un `F#` de 4 s. La familia disminuida lleva
+`DIM_WEIGHT = 3` porque junta 3 calidades frente a las 6 de la mayor; el
+aumentado va ×1 (con peso gana poca detección y pierde precisión). Medido en
+6 canciones de McGill Billboard con voz y batería, frente a no separarlos:
+
+| | root | triads | aug detectado / acertado | dim detectado / acertado |
+|---|---|---|---|---|
+| Billboard antes | 0.744 | 0.654 | 0% / — | 5% / 50% |
+| Billboard ahora | 0.740 | 0.665 | 25% / 71% | 35% / 67% |
+| GuitarSet antes | 0.737 | 0.698 | — | 26% / 71% |
+| GuitarSet ahora | 0.737 | 0.704 | — | 45% / 68% |
+
+Coste: −0.3 pt de majmin y sevenths en GuitarSet. Límite conocido: solo salen
+los aumentados sostenidos (~2 s); los de paso (0.6–1.3 s, Anita Baker, Alan
+O'Day) los sigue absorbiendo Viterbi. Relajarlo solo en esas familias traería
+de vuelta fantasmas; no se ha probado.
+
+Las canciones de Billboard (anotaciones CC0, sin artistas del entrenamiento de
+BTC) y el experimento viven en `/tests/billboard/`, ignorado por git: el audio
+no se puede versionar. Rita Coolidge "Higher And Higher", George Harrison "All
+Those Years Ago" (versión 3:47, no la remasterización de 3:22), Juice Newton
+"Break It To Me Gently", Tina Turner "Private Dancer" (7:13), Anita Baker
+"Caught Up In The Rapture" y Alan O'Day "Undercover Angel". Comprueba la
+versión alineando por cuartos: si el acierto se desploma a mitad, es otra
+edición.
+
 Descartadas, con números en `bench_chords.py`: el checkpoint de 25 clases como
 base temporal y el de 170 para la calidad (pierde majmin frente a sumar el de
 170), el promedio de ambos modelos (no aporta) y la votación por beat (quita
@@ -131,8 +160,13 @@ todo). Lo que queda es la raíz equivocada (~26% en validación): errores
 sostenidos en los que el modelo está convencido, que ningún suavizado arregla.
 
 GuitarSet es guitarra sola y la referencia es la partitura ("instructed"):
-parte de las "séptimas inventadas" pueden ser voicings reales. Falta validar
-con canciones con voz y batería.
+parte de las "séptimas inventadas" pueden ser voicings reales.
+
+Dos errores sostenidos que ya se vieron en canciones reales: los menores con
+séptima se leen como su relativo mayor (`Ebm7` → `Gb`, el mismo caso que
+`E:min`/`G` de arriba), y en hip-hop sobre sample el modelo dice "sin acorde"
+el 74% del tiempo (De La Soul): no ve la armonía bajo rap y batería. Una idea
+sin probar para ese caso es detectar sobre los stems sin batería ni voz.
 
 **El conmutador simples/completos es de detalle, no de precisión.** Las raíces
 y los tiempos son idénticos en las dos posiciones. La tríada se deduce en el
@@ -282,7 +316,7 @@ fuente de verdad para el frontend.
 
 ## Estado y prioridades
 
-El backend está completo y medido: `core.py`, `api.py`, CLI, bench y 46
+El backend está completo y medido: `core.py`, `api.py`, CLI, bench y 50
 pruebas en verde. El frontend compila y el mezclador está resuelto.
 
 **Lo siguiente**: probarlo de punta a punta con una canción real. Subir un MP3
