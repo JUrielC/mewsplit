@@ -125,6 +125,10 @@ export function Studio({ job }: Props) {
 
   const names = useMemo(() => tracks.map((t) => t.name), [tracks]);
   const soloed = useMemo(() => tracks.filter((t) => t.soloed).map((t) => t.name), [tracks]);
+  // Lo que suena de verdad (mutes y solos ya descontados): es lo que exporta
+  // renderMix, así que el nombre del archivo sale de aquí y no de los solos.
+  const audible = useMemo(() => tracks.filter((t) => t.audible).map((t) => t.name), [tracks]);
+  const partial = audible.length > 0 && audible.length < tracks.length;
 
   function withMixer(action: (mixer: Mixer) => void) {
     const mixer = mixerRef.current;
@@ -159,18 +163,18 @@ export function Studio({ job }: Props) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${saveName(job, soloed)}.wav`;
+      a.download = `${saveName(job, partial ? audible : [])}.wav`;
       a.click();
       URL.revokeObjectURL(url);
     } finally {
       setSaving(false);
     }
-  }, [saving, job, soloed]);
+  }, [saving, job, partial, audible]);
 
   const saveLabel = saving
     ? "rendering…"
-    : soloed.length > 0
-      ? `save mix · ${soloed.join(" + ")}`
+    : partial
+      ? `save mix · ${audible.join(" + ")}`
       : "save mix";
 
   if (error) {
@@ -281,9 +285,9 @@ function buildWaveforms(mixer: Mixer, names: string[]): Record<string, Float32Ar
   return output;
 }
 
-/** Nombre del archivo descargado: "título - stems seleccionados". */
-function saveName(job: Job, soloed: string[]): string {
+/** Nombre del archivo descargado: "título - pistas que suenan", o "full mix" si suenan todas. */
+function saveName(job: Job, audible: string[]): string {
   const base = job.filename?.replace(/\.[^.]+$/, "") ?? job.id;
-  if (soloed.length === 0) return `${base} - full mix`;
-  return `${base} - ${soloed.join("+")}`;
+  if (audible.length === 0) return `${base} - full mix`;
+  return `${base} - ${audible.join("+")}`;
 }
