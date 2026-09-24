@@ -1,141 +1,260 @@
 # mewsplit
 
-Separador de pistas de audio con detección de acordes. Aplicación de escritorio
-con opción de despliegue web.
+Separa una canción en sus instrumentos, detecta sus acordes y te deja
+practicar encima. Aplicación de escritorio con opción de despliegue web.
 
-Recibe un archivo de audio y devuelve:
+Subes un archivo de audio y obtienes:
 
-1. **Stems separados** — voz, bajo, batería y otros, como archivos independientes.
-2. **Progresión de acordes** con marcas de tiempo, en vocabulario amplio
-   (séptimas, sus, disminuidos), no solo mayor/menor.
-3. **Mezclador** con volúmenes independientes por stem, para aislar o silenciar
-   partes mientras se escucha.
+- **Stems separados**: voz, bajo, batería y el resto; opcionalmente también
+  guitarra y piano.
+- **Los acordes de la canción**, con sus tiempos, alineados con las formas de
+  onda.
+- **Un mezclador** para subir, bajar, silenciar o aislar cada instrumento
+  mientras suena.
+- **Backing tracks**: exporta la mezcla que armaste (sin voz, sin guitarra,
+  solo la sección rítmica…) como un WAV para tocar encima.
 
-El caso de uso: sacar de oído una canción, aislar el bajo para estudiarlo, o
-hacer una pista de acompañamiento quitando un instrumento.
+Pensado para sacar canciones de oído, estudiar una línea de bajo, ensayar sin
+el instrumento que tocas tú o hacer un karaoke.
+
+## Qué puede hacer
+
+### Separación de pistas
+
+- **4 stems** (por defecto): voz, bajo, batería y otros.
+- **6 stems** (opcional): añade guitarra y piano. Se elige al subir el audio.
+  Cuesta algo de calidad en los 4 stems base, y el piano sale con artefactos;
+  la guitarra sale bien.
+- Un **instrumental** (todo menos la voz) se genera automáticamente.
+- Barra de progreso real durante la separación. Una canción de 3:39 tarda
+  unos 32 s en un MacBook M3, sin GPU dedicada.
+- Formatos de entrada: WAV, MP3, FLAC, AIFF, M4A y OGG.
+
+### Acordes
+
+- Se detectan sobre el audio original, en paralelo con la separación: están
+  listos en un par de segundos.
+- Cada acorde es un bloque proporcional a su duración real, en el mismo eje
+  que las formas de onda. Clic en un acorde para saltar a él.
+- El acorde que está sonando se muestra en el transporte.
+- **Dos niveles de detalle**, sin volver a procesar:
+  - **simples**: solo mayores y menores.
+  - **completos**: además séptimas, sextas, suspendidos, aumentados y
+    disminuidos, cuando hay evidencia sostenida.
+- Cifrado de siempre (`Gm`, `C7`, `Am7b5`), no notación técnica.
+
+### Mezclador
+
+- Volumen, mute y solo por pista. Todas las pistas suenan en fase: se
+  programan con el mismo reloj de audio, no cada una por su cuenta.
+- **Modos de práctica** de un clic: mezcla completa, aislar bajo, sin voz y
+  sección rítmica (bajo + batería). Se calculan sobre los stems que existen,
+  así que funcionan igual con 4 que con 6.
+
+### Backing tracks
+
+**save mix** renderiza la mezcla actual (respetando volúmenes, mutes y solos)
+a un WAV de 16 bits. El nombre del archivo lista las pistas que suenan:
+`Canción - bass+drums.wav`, o `Canción - full mix.wav` si suenan todas.
+Algunos usos:
+
+- **Karaoke**: modo "sin voz" y guardar.
+- **Pista para bajista**: silenciar `bass`.
+- **Pista para guitarrista**: silenciar `other` (o `guitar` con 6 stems).
+- **Base rítmica**: modo "sección rítmica" (bajo + batería).
+- **Estudiar un instrumento**: dejarlo en solo y guardar.
+
+### Navegación
+
+- Formas de onda por pista, con zoom de 1× a 128×. El ancho de la pantalla es
+  la resolución temporal: a más zoom, más detalle del compás.
+- El scroll sigue al cursor de reproducción; clic en cualquier punto para
+  saltar ahí.
+- Atajos de teclado:
+
+  | tecla | acción |
+  |---|---|
+  | espacio | reproducir / pausar |
+  | ← → | mover 1 s |
+  | ⇧ ← → | mover 5 s |
+  | 0 – 9 | saltar al 0 %–90 % de la canción |
+
+### Desde la terminal
+
+Todo lo anterior salvo el mezclador, sin interfaz:
+
+```bash
+cd backend
+.venv/bin/python cli.py cancion.mp3                  # stems + instrumental + acordes en ./output
+.venv/bin/python cli.py cancion.mp3 --6-stems        # añade guitarra y piano
+.venv/bin/python cli.py cancion.mp3 --simple-chords  # acordes solo mayores y menores
+.venv/bin/python cli.py cancion.mp3 --skip-chords    # solo separar
+.venv/bin/python cli.py cancion.mp3 --out stems/ --model-dir ~/.cache/mewsplit/models
+```
 
 ## Estado
 
-El backend funciona y está medido. El frontend compila y tiene el mezclador
-resuelto, pero aún no se ha probado de punta a punta contra una canción real.
-`desktop/` está escrito y sin compilar: falta Rust.
+Funciona de punta a punta en `next dev`: se sube una canción, se separa, se
+ven los acordes bajo las formas de onda y las pistas suenan en fase. Probado
+con canciones reales.
+
+Pendiente:
+
+- **Escritorio**: `desktop/` (Tauri) está escrito pero no se ha compilado
+  todavía; tampoco el empaquetado del backend como sidecar.
+- **Bucle de una sección**: el motor de audio ya lo soporta, pero aún no hay
+  control en la interfaz.
+- **Acordes al instante**: el backend los publica a los ~2 s, pero la interfaz
+  espera a que terminen los stems para mostrarlos.
 
 ## Puesta en marcha
 
-Requiere macOS con Apple Silicon, Python 3.11+ y Node 20+.
+Requiere macOS con Apple Silicon, Python 3.11+, [uv](https://docs.astral.sh/uv/)
+y Node 20+.
 
 ```bash
 # Backend
 cd backend
-uv venv .venv --python 3.11 && source .venv/bin/activate
-uv pip install -e ".[dev]"
-pytest                                   # 27 pruebas, sin descargar modelos
-python -m mewsplit.api                   # imprime puerto y token
+uv venv .venv --python 3.11 && uv pip install -e ".[dev]"
+cp .env.example .env                  # una sola vez: fija puerto y token
+.venv/bin/pytest                      # 50 pruebas, sin descargar modelos
+.venv/bin/python -m mewsplit.api      # imprime MEWSPLIT_READY port=<n> token=<t>
 
 # Frontend, en otra terminal
 cd frontend
-npm install
-cp .env.example .env.local               # pega ahí el puerto y el token
-npm run dev
+npm install && npm run dev            # lee el puerto y el token de backend/.env
 ```
 
-Los checkpoints se descargan en la primera ejecución (Demucs pesa 84 MB) y
-van a `~/.cache/mewsplit/models`.
+`backend/.env` es la única fuente de puerto y token: el frontend lo lee al
+arrancar, así que no hace falta configurar nada más. `frontend/.env.local`
+solo se usa para apuntar a un backend remoto.
 
-### Desde la terminal, sin interfaz
-
-```bash
-cd backend
-python cli.py cancion.mp3                # stems + acordes en ./output
-python cli.py cancion.mp3 --6-stems      # añade guitarra y piano
-python cli.py cancion.mp3 --skip-chords
-python bench.py cancion.mp3              # comparativa de modelos
-```
+La primera ejecución descarga los modelos: Demucs (84 MB) a
+`~/.cache/mewsplit/models` y BTC a `~/.cache/huggingface/`. Nada de eso va al
+repositorio.
 
 ## Arquitectura
 
 ```
-backend/mewsplit/core.py   lógica pura: recibe rutas, devuelve datos
-backend/mewsplit/api.py    FastAPI encima de core
-frontend/                  Next.js — la misma build sirve a web y a escritorio
-desktop/                   Tauri: arranca el backend como sidecar
-shared/types.ts            generado desde OpenAPI
+backend/mewsplit/core.py         orquestación pura: recibe rutas, devuelve datos
+backend/mewsplit/separation.py   Demucs vía audio-separator
+backend/mewsplit/chords.py       BTC + decodificación propia de acordes
+backend/mewsplit/api.py          FastAPI: trabajos en segundo plano, token, puerto
+backend/cli.py                   la misma lógica desde la terminal
+frontend/                        Next.js: la misma build sirve a web y a escritorio
+frontend/lib/audio.ts            el mezclador (Web Audio API)
+desktop/                         Tauri: arranca el backend como sidecar
+shared/types.ts                  tipos del contrato, generados desde OpenAPI
 ```
 
-**La regla**: `core.py` no sabe dónde corre. Ni Gradio, ni Modal, ni HF Spaces,
-ni Vercel, ni Tauri. Todo lo demás es envoltorio y todo envoltorio es
-reemplazable. Eso es lo que hace que el mismo código sirva para escritorio y
-para web, y que cambiar de proveedor de nube sea reescribir un archivo.
+**La regla**: `core.py` no sabe dónde corre. Ni FastAPI, ni Tauri, ni ningún
+proveedor de nube. Todo lo demás es envoltorio y todo envoltorio es
+reemplazable: por eso el mismo código sirve a escritorio y a web, y cambiar de
+proveedor es reescribir un archivo.
 
-La comunicación es HTTP en ambos destinos: en escritorio contra `localhost`,
+La comunicación es HTTP en los dos destinos: en escritorio contra `localhost`,
 en web contra un servidor remoto. El frontend solo cambia la URL base.
 
 ## Decisiones, con los datos que las respaldan
 
 ### Separación: Demucs v4 estándar
 
-`htdemucs` sobre `audio-separator`. Descartado `htdemucs_ft` (ensamble de 4
-modelos): tarda 4.06x más y no aportó diferencia útil.
+`htdemucs` sobre `audio-separator`. Se descartó `htdemucs_ft`, un ensamble de
+4 modelos: tarda 4 veces más y no aportó diferencia útil.
 
 Medición en MacBook M3, canción de 3:39:
 
 | Modelo        | Tiempo | Factor tiempo real |
 |---------------|--------|--------------------|
-| `htdemucs`    | 32 s   | 6.8x               |
-| `htdemucs_ft` | 131 s  | 1.7x               |
+| `htdemucs`    | 32 s   | 6.8×               |
+| `htdemucs_ft` | 131 s  | 1.7×               |
 
-6.8x tiempo real en una laptop sin GPU dedicada hace que la versión de
-escritorio sea viable como producto principal, no como plan B.
+6.8× tiempo real en una laptop sin GPU dedicada hace viable la versión de
+escritorio como producto principal, no como plan B.
 
-### Acordes: BTC, independiente de la separación
+### Acordes: BTC con decodificación propia
 
-`puar-playground/btc-chord`, vocabulario de 170 clases, notación Harte. Corre
-en CPU en ~1 segundo por canción.
+El modelo es BTC (`puar-playground/btc-chord`), vocabulario de 170 clases,
+en CPU. Pero sus acordes no se usan tal cual: el modelo decide frame a frame
+(cada 93 ms) y cada frame dudoso se convertía en un acorde "fantasma" de una
+fracción de segundo. mewsplit toma sus probabilidades y las decodifica:
 
-Se probó la hipótesis de que detectar acordes sobre el instrumental (sin voz)
-mejoraría la precisión. **No se confirmó**: 20 de 22 tramos coincidieron con la
-detección sobre el audio original. Por eso las dos etapas corren en paralelo y
-los acordes no esperan a los stems.
+1. Ventanas solapadas, para que ningún frame quede en el borde de un bloque.
+2. La probabilidad de las 170 clases se suma por familia: `C`, `C7` y `Cmaj7`
+   dejan de competir entre sí. Aumentados y disminuidos tienen familia propia
+   para no quedar absorbidos por el acorde vecino.
+3. Viterbi: cambiar de acorde "cuesta", así que un frame dudoso no alcanza a
+   crear un acorde nuevo.
+4. La calidad (séptima, sus…) se decide por segmento, y solo se muestra si
+   pesa 3 veces más que la tríada. Una séptima inventada choca al tocar
+   encima; una omitida solo suena más simple.
 
-Queda una discrepancia por resolver a oído: en cinco puntos recurrentes el
-original detecta `E:min` donde el instrumental detecta `G`. Comparten dos notas;
-la diferencia está en si la tercera viene de la guitarra o de la melodía vocal.
+Medido en [GuitarSet](https://zenodo.org/records/3371780) (guitarristas que
+no se usaron para ajustar) y en 6 canciones de
+[McGill Billboard](https://ddmal.music.mcgill.ca/research/The_McGill_Billboard_Project_(Chord_Analysis_Dataset))
+con voz y batería, de artistas que no están en el entrenamiento de BTC:
 
-## Alcance de la v1
+| | antes | ahora |
+|---|---|---|
+| acordes fantasma por minuto (GuitarSet) | 8.6 | 0.16 |
+| raíz correcta (GuitarSet) | 72.2 % | 73.7 % |
+| mayor/menor correcto (GuitarSet) | 70.6 % | 71.6 % |
+| disminuidos detectados (Billboard) | 5 % | 35 % |
+| aumentados detectados (Billboard) | 0 % | 25 % |
 
-Dentro: separación en 4 stems, acordes con marcas de tiempo, mezclador con
-volúmenes, exportar stems, empaquetado de escritorio para macOS.
+El script de medición es `backend/bench_chords.py`; los datos y el audio se
+quedan fuera del repositorio.
+
+Límites conocidos: los aumentados de paso (menos de ~1 s) no se detectan; un
+menor con séptima a veces se lee como su relativo mayor (`E♭m7` → `G♭`); y en
+hip-hop construido sobre un sample el modelo a menudo no encuentra armonía.
+
+**Los acordes son independientes de la separación.** Se probó detectarlos
+sobre el instrumental, esperando más precisión, y no la hubo: 20 de 22 tramos
+coincidieron con la detección sobre el audio original. Por eso las dos etapas
+corren en paralelo y los acordes no esperan a los stems.
+
+## Alcance
+
+Dentro: separación en 4 o 6 stems, acordes con tiempos, mezclador, modos de
+práctica, exportación de mezclas, empaquetado de escritorio para macOS.
 
 Fuera por ahora: transcripción a MIDI, detección de tempo y compás, edición de
 los acordes detectados, cuentas de usuario, historial.
 
 ## Distribución
 
-GitHub Releases con binario sin firmar. La primera vez hay que abrirlo con clic
-derecho para saltar Gatekeeper. Es una decisión, no una omisión: la App Store
-exige sandboxing, que pelea con el sidecar de Python y con la descarga de
-checkpoints en runtime, y la exención de cuota de Apple es solo para
-organizaciones.
+GitHub Releases con binario sin firmar. La primera vez hay que abrirlo con
+clic derecho para saltar Gatekeeper. Es una decisión, no una omisión: la App
+Store exige sandboxing, que choca con el sidecar de Python y con la descarga
+de modelos en tiempo de ejecución, y la exención de cuota de Apple es solo
+para organizaciones.
 
 ## Licencia y atribución
 
 La detección de acordes usa **BTC** (Bi-directional Transformer for Chord
 recognition), de Jonggwon Park, Kyoyun Choi, Sungwook Jeon, Dokyun Kim y
 Jonghun Park — *"A Bi-Directional Transformer for Musical Chord Recognition"*
-(ISMIR 2019). Código original: [jayg996/BTC-ISMIR19](https://github.com/jayg996/BTC-ISMIR19).
-Los pesos se toman de [puar-playground/btc-chord](https://huggingface.co/puar-playground/btc-chord).
+(ISMIR 2019). Código original:
+[jayg996/BTC-ISMIR19](https://github.com/jayg996/BTC-ISMIR19). Los pesos se
+toman de [puar-playground/btc-chord](https://huggingface.co/puar-playground/btc-chord).
 
 El código de BTC es MIT, pero hay ambigüedad sobre los pesos: un tercero
 sostiene que heredan restricciones no comerciales de los datasets con que se
 entrenaron (Isophonics, Robbie Williams, UsPop2002), aunque los autores
 originales nunca hicieron esa distinción. En MIR es práctica común licenciar
-código y pesos por separado —madmom lo hace explícitamente— así que el
+código y pesos por separado (madmom lo hace explícitamente), así que el
 argumento no es frívolo.
 
 Para uso no comercial no hay problema bajo ninguna interpretación. Por eso los
-pesos **no se empaquetan ni se redistribuyen**: se descargan de Hugging Face en
-tiempo de ejecución. Si el proyecto se monetizara, hay que aclararlo con los
-autores o migrar a Basic Pitch de Spotify (Apache 2.0 para código y pesos).
+pesos **no se empaquetan ni se redistribuyen**: se descargan de Hugging Face
+en tiempo de ejecución. Si el proyecto se monetizara, habría que aclararlo con
+los autores o migrar a Basic Pitch de Spotify (Apache 2.0 para código y
+pesos).
 
 La separación usa **Demucs v4** (Alexandre Défossez et al.) vía
 [audio-separator](https://github.com/nomadkaraoke/python-audio-separator).
+
+Las mediciones de acordes usan **GuitarSet** (Xi et al., ISMIR 2018, CC BY
+4.0) y las anotaciones de **McGill Billboard** (Burgoyne et al., ISMIR 2011,
+CC0). Ninguno de los dos se redistribuye aquí.
