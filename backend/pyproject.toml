@@ -32,6 +32,8 @@ dev = [
   "pytest==9.1.1",
   "httpx==0.28.1",
   "ruff==0.16.6",
+  # Solo para bench_chords.py: métricas estándar de acordes (MIREX).
+  "mir_eval==0.8.2",
 ]
 
 [project.scripts]

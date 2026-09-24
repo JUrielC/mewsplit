@@ -16,13 +16,14 @@ con marcas de tiempo, y un mezclador para escuchar con volúmenes por pista.
 # Backend
 cd backend
 uv venv .venv --python 3.11 && uv pip install -e ".[dev]"
-.venv/bin/pytest                      # 27 pruebas, no descargan modelos
+.venv/bin/pytest                      # 46 pruebas, no descargan modelos
 .venv/bin/pytest -m slow              # las que separan audio de verdad
 .venv/bin/pytest tests/test_core.py::test_stopwatch_records_the_stage
 cp .env.example .env                  # una vez: fija puerto y token de desarrollo
 .venv/bin/python -m mewsplit.api      # imprime MEWSPLIT_READY port=<n> token=<t>
 .venv/bin/python cli.py cancion.mp3 [--6-stems] [--skip-chords] [--simple-chords]
 .venv/bin/python bench.py cancion.mp3
+.venv/bin/python bench_chords.py [variante ...]   # acordes contra GuitarSet
 
 # Frontend
 cd frontend
@@ -62,6 +63,7 @@ backend/mewsplit/
   api.py          FastAPI: trabajos en segundo plano, token, puerto dinámico
 backend/cli.py    argparse sobre core
 backend/bench.py  consume las funciones sueltas, no analyze(): necesita otro orden
+backend/bench_chords.py  mide variantes de acordes contra GuitarSet (mir_eval)
 frontend/lib/audio.ts   el mezclador (Web Audio API)
 frontend/lib/api.ts     cliente HTTP, tipos importados de shared/types.ts
 desktop/src-tauri/      cáscara; tauri.conf.json va DENTRO de src-tauri/
@@ -96,6 +98,47 @@ diferencia útil. Medido, no supuesto.
 **Acordes: `puar-playground/btc-chord`, en CPU, vocabulario de 170 clases**
 (notación Harte). ~1 segundo por canción. No necesita GPU.
 
+**Los acordes NO salen de `model.predict()`.** Ese método toma el argmax por
+frame de 93 ms y tira las probabilidades: cada frame dudoso es un acorde
+fantasma. `detect_chords()` hace su propia decodificación, medida con
+`bench_chords.py` en GuitarSet (180 fragmentos; guitarristas 00-03 para
+ajustar y 04-05 para validar). En validación, frente al `predict()` crudo:
+
+| | root | majmin | sevenths | fantasmas/min | segmentos/min |
+|---|---|---|---|---|---|
+| `predict()` | 0.722 | 0.706 | 0.569 | 8.60 | 35.9 (ref 23.6) |
+| actual | 0.737 | 0.718 | 0.615 | 0.16 | 23.8 |
+
+Las piezas, en orden, y qué aporta cada una:
+1. Ventanas de 10 s solapadas a medio bloque: la única que mejora la raíz
+   (+1.1 pt). BTC no tiene contexto entre bloques.
+2. Masa de las 170 clases sumada por familia (raíz + tercera): C, C7, Cmaj7
+   dejan de competir entre sí.
+3. Viterbi con `SELF_PROBABILITY = 0.99`: −98% de fantasmas. Da casi igual
+   entre 0.9 y 0.995, no es un ajuste frágil.
+4. Calidad por segmento con `QUALITY_MARGIN = 3`: una séptima se muestra solo
+   si pesa 3× la tríada. Detecta el 45% de las séptimas reales e inventa
+   séptimas en el 11% de las tríadas. Conservador a propósito: una séptima
+   inventada choca al tocar encima, una omitida solo suena más simple. No
+   elijas el margen por la métrica `sevenths`: sube sola al dejar de predecir
+   séptimas.
+
+Descartadas, con números en `bench_chords.py`: el checkpoint de 25 clases como
+base temporal y el de 170 para la calidad (pierde majmin frente a sumar el de
+170), el promedio de ambos modelos (no aporta) y la votación por beat (quita
+fantasmas pero el beat tracker mete sus errores; con Viterbi encima empeora
+todo). Lo que queda es la raíz equivocada (~26% en validación): errores
+sostenidos en los que el modelo está convencido, que ningún suavizado arregla.
+
+GuitarSet es guitarra sola y la referencia es la partitura ("instructed"):
+parte de las "séptimas inventadas" pueden ser voicings reales. Falta validar
+con canciones con voz y batería.
+
+**El conmutador simples/completos es de detalle, no de precisión.** Las raíces
+y los tiempos son idénticos en las dos posiciones. La tríada se deduce en el
+cliente (`toTriad` en `lib/chords.ts`): raíz + tercera, teoría musical que no
+depende del algoritmo, así que no hizo falta otro campo en la API.
+
 **Los acordes son independientes de la separación.** Se probó detectarlos sobre
 el instrumental esperando mejor precisión: 20 de 22 tramos idénticos al audio
 original. No esperes a los stems para calcular acordes. Queda una discrepancia
@@ -121,6 +164,12 @@ el patrón de nombres del modelo, ese mapeo se rompe en silencio.
 
 **Los nombres de modelo cambian entre releases.** Confirma con
 `audio-separator --list_models` antes de fijar uno.
+
+**`AutoModel.from_pretrained` se traga `large_voca`.** Lo guarda como atributo
+de configuración y el `from_pretrained` propio de BTC nunca lo recibe: siempre
+cargaba el de 170 clases y `--simple-chords` no hacía nada, sin error.
+`chords._load` llama a la clase directamente; hay una prueba `slow` que lo
+vigila.
 
 **`audio-separator` carga el modelo de forma diferida**, así que el tiempo de
 carga aparece dentro del de separación, no antes.
@@ -233,7 +282,7 @@ fuente de verdad para el frontend.
 
 ## Estado y prioridades
 
-El backend está completo y medido: `core.py`, `api.py`, CLI, bench y 27
+El backend está completo y medido: `core.py`, `api.py`, CLI, bench y 46
 pruebas en verde. El frontend compila y el mezclador está resuelto.
 
 **Lo siguiente**: probarlo de punta a punta con una canción real. Subir un MP3

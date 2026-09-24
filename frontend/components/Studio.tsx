@@ -4,8 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 
 import { downloadStem, type Job } from "@/lib/api";
 import { Mixer, peaks as computePeaks, type TrackState } from "@/lib/audio";
+import { simplifyChords, type ChordDetail } from "@/lib/chords";
 import { useTransportKeys } from "@/lib/useTransportKeys";
 
+import { ChordDetailControl } from "./ChordDetailControl";
 import { ChordLane } from "./ChordLane";
 import { PracticeModes } from "./PracticeModes";
 import { TrackStrip } from "./TrackStrip";
@@ -27,6 +29,9 @@ const WAVEFORM_BLOCKS = 24000;
 /** Arranca ampliado: la lectura fina del compás es el caso normal de uso. */
 const DEFAULT_ZOOM = 32;
 
+/** Preferencia del usuario, no dato del trabajo: sobrevive a cambiar de canción. */
+const DETAIL_KEY = "mewsplit.chordDetail";
+
 /** Orden fijo de arriba abajo; los stems opcionales van al final. */
 const ORDER = ["vocals", "bass", "drums", "guitar", "other", "piano"];
 
@@ -43,6 +48,7 @@ export function Studio({ job }: Props) {
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
+  const [detail, setDetail] = useState<ChordDetail>(readDetail);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -99,9 +105,23 @@ export function Studio({ job }: Props) {
     }
   }, [time, duration]);
 
+  const chords = useMemo(
+    () => (detail === "simple" ? simplifyChords(job.chords) : job.chords),
+    [job.chords, detail],
+  );
+
   const currentChord = useMemo(() => {
-    return job.chords.find((c) => time >= c.start && time < c.end)?.chord ?? null;
-  }, [job.chords, time]);
+    return chords.find((c) => time >= c.start && time < c.end)?.chord ?? null;
+  }, [chords, time]);
+
+  function changeDetail(next: ChordDetail) {
+    setDetail(next);
+    try {
+      localStorage.setItem(DETAIL_KEY, next);
+    } catch {
+      // Sin almacenamiento (ventana privada, datos bloqueados) solo se pierde el recuerdo.
+    }
+  }
 
   const names = useMemo(() => tracks.map((t) => t.name), [tracks]);
   const soloed = useMemo(() => tracks.filter((t) => t.soloed).map((t) => t.name), [tracks]);
@@ -173,6 +193,7 @@ export function Studio({ job }: Props) {
           }
         />
         <div className={styles.toolbarRight}>
+          <ChordDetailControl detail={detail} onDetail={changeDetail} />
           <button
             type="button"
             className={`label ${styles.saveMix}`}
@@ -205,7 +226,7 @@ export function Studio({ job }: Props) {
         <div className={styles.scroller} ref={scrollerRef}>
           <div className={styles.canvas} style={canvas} onClick={seekFromClick}>
             <ChordLane
-              chords={job.chords}
+              chords={chords}
               duration={duration}
               time={time}
               onSeek={(second) => withMixer((m) => m.seek(second))}
@@ -233,6 +254,16 @@ export function Studio({ job }: Props) {
       />
     </div>
   );
+}
+
+function readDetail(): ChordDetail {
+  try {
+    const stored = localStorage.getItem(DETAIL_KEY);
+    // "triads" es el nombre anterior de "simple": quien ya lo eligió no lo pierde.
+    return stored === "simple" || stored === "triads" ? "simple" : "full";
+  } catch {
+    return "full";
+  }
 }
 
 function orderOf(name: string): number {

@@ -33,7 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--simple-chords",
         action="store_true",
-        help="Vocabulario simplificado de 25 clases en vez de 170",
+        help="Solo tríadas mayores y menores, sin séptimas ni otras calidades",
     )
     parser.add_argument(
         "--model-dir",

@@ -62,6 +62,9 @@ build/
 dist/
 
 # Directorios locales / No versionados
+# Investigación y pruebas exploratorias (mediciones, barridos, datos). Anclado
+# a la raíz: `tests/` a secas también ignoraría backend/tests, la suite real.
+/tests/
 pipeline/
 design/
 feature-basic-pitch.md

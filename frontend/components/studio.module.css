@@ -60,6 +60,19 @@
   color: var(--accent);
 }
 
+.detail {
+  display: flex;
+  gap: 12px;
+}
+
+.detail button {
+  color: var(--text-dim);
+}
+
+.detail .detailOn {
+  color: var(--text);
+}
+
 .zoom {
   display: flex;
   align-items: center;
