@@ -8,6 +8,8 @@ El cronómetro llega como parámetro y solo se necesita que exponga
 
 from __future__ import annotations
 
+import os
+import shutil
 from contextlib import nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -50,6 +52,8 @@ def separate(
     `on_progress` recibe un float 0..1 con el avance de la separación.
     """
     from audio_separator.separator import Separator
+
+    ensure_ffmpeg()
 
     audio_path = Path(audio_path).resolve()
     output_dir = Path(output_dir).resolve()
@@ -154,6 +158,34 @@ def build_instrumental(
         sf.write(str(out_path), mix, samplerate)
 
     return out_path
+
+
+def ensure_ffmpeg() -> None:
+    """
+    Garantiza que haya un `ffmpeg` en el PATH.
+
+    `audio-separator` se niega a arrancar sin él, y quien instala mewsplit para
+    tocar no tiene por qué tener Homebrew. Si el sistema ya tiene uno se usa
+    ese; si no, el que trae `imageio-ffmpeg` dentro de su wheel. Ese binario se
+    llama `ffmpeg-macos-aarch64-v7.1` y audio-separator busca literalmente
+    `ffmpeg`, así que se le pone un enlace con ese nombre en la caché.
+    """
+    if shutil.which("ffmpeg"):
+        return
+
+    import imageio_ffmpeg
+
+    bundled = Path(imageio_ffmpeg.get_ffmpeg_exe())
+    bin_dir = Path.home() / ".cache" / "mewsplit" / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    link = bin_dir / "ffmpeg"
+    # Una actualización de imageio-ffmpeg cambia la ruta del binario: el enlace
+    # viejo quedaría apuntando a la nada.
+    if link.is_symlink() and link.resolve() != bundled.resolve():
+        link.unlink()
+    if not link.exists():
+        link.symlink_to(bundled)
+    os.environ["PATH"] = f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"
 
 
 def _timed(timer, label: str):

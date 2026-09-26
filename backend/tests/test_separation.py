@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import numpy as np
 import soundfile as sf
 
-from mewsplit.separation import _map_stems, build_instrumental
+from mewsplit.separation import _map_stems, build_instrumental, ensure_ffmpeg
 
 
 def test_maps_absolute_paths_and_bare_names(tmp_path: Path, tone):
@@ -62,3 +63,29 @@ def test_returns_none_without_non_vocal_stems(tmp_path: Path, tone):
 def test_reuses_instrumental_when_model_provides_it(tmp_path: Path, tone):
     existing = tone("x_(Instrumental).wav")
     assert build_instrumental({"instrumental": existing}, tmp_path) == existing
+
+
+def test_ensure_ffmpeg_falls_back_to_the_bundled_binary(tmp_path: Path, monkeypatch):
+    """Quien instala mewsplit para tocar no tiene Homebrew: sin esto audio-separator no arranca."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    assert shutil.which("ffmpeg") is None
+
+    ensure_ffmpeg()
+
+    found = shutil.which("ffmpeg")
+    assert found == str(tmp_path / ".cache" / "mewsplit" / "bin" / "ffmpeg")
+
+
+def test_ensure_ffmpeg_keeps_the_system_one(tmp_path: Path, monkeypatch):
+    system = tmp_path / "sys"
+    system.mkdir()
+    fake = system / "ffmpeg"
+    fake.write_text("#!/bin/sh\n")
+    fake.chmod(0o755)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PATH", str(system))
+
+    ensure_ffmpeg()
+
+    assert shutil.which("ffmpeg") == str(fake)
