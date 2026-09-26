@@ -16,6 +16,11 @@ echo "Compilando la interfaz estática…"
 rm -rf "$WEB"
 cp -R "$ROOT/frontend/out" "$WEB"
 
+# La licencia exige que quien reciba una copia reciba también sus términos y
+# el `Required Notice`. hatchling mete en el wheel el LICENSE de backend/;
+# el original vive en la raíz, así que se copia (la copia está ignorada).
+cp "$ROOT/LICENSE" "$ROOT/backend/LICENSE"
+
 echo "Construyendo el wheel…"
 rm -rf "$ROOT/dist"
 (cd "$ROOT/backend" && uv build --wheel --out-dir "$ROOT/dist")

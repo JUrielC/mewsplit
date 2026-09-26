@@ -353,7 +353,15 @@ edición manual de acordes, cuentas de usuario, historial.
 
 ## Licencia
 
-El código de BTC es MIT, pero hay ambigüedad sobre los pesos: un tercero
+**El código de mewsplit es PolyForm Noncommercial 1.0.0** (`LICENSE`, texto
+oficial sin alterar más la línea `Required Notice`). Se eligió sobre MIT
+porque el autor no quiere que se venda ni se meta en un producto cerrado; no
+por obligación de BTC, cuyos pesos no se redistribuyen y viajan con su propia
+licencia. Es reversible en un sentido: se puede pasar a una licencia abierta
+para versiones futuras, pero lo publicado con MIT nunca podría cerrarse. No lo
+describas como "open source" en la documentación: es código disponible.
+
+**Los pesos de BTC.** El código de BTC es MIT, pero hay ambigüedad sobre los pesos: un tercero
 sostiene que heredan restricciones no comerciales de los datasets de
 entrenamiento (Isophonics, Robbie Williams, UsPop2002). Los autores originales
 nunca hicieron esa distinción. En MIR es práctica común licenciar código y pesos

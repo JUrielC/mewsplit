@@ -299,6 +299,36 @@ ejecución.
 
 ## Licencia y atribución
 
+El código de mewsplit se publica bajo la
+[PolyForm Noncommercial 1.0.0](LICENSE): es código disponible, no código
+abierto en el sentido oficial. En lenguaje llano:
+
+- **Puedes** usarlo gratis para tocar, estudiar, enseñar o investigar,
+  modificarlo y compartirlo, siempre sin fines de lucro.
+- **No puedes** venderlo ni incluirlo en un producto o servicio comercial.
+- Las escuelas, ONG e instituciones públicas pueden usarlo aunque reciban
+  financiamiento.
+
+Si te interesa un uso comercial, escríbeme por GitHub.
+
+### Uso bajo tu propio riesgo
+
+mewsplit se entrega tal cual, sin garantías de ningún tipo. Quien lo usa lo
+hace bajo su propia responsabilidad, y el autor no responde por daños
+derivados de su uso. En particular:
+
+- **Los derechos del audio que proceses son tu responsabilidad.** Separar una
+  canción no te da derechos sobre ella ni sobre sus stems.
+- **Los modelos tienen sus propias licencias**, que se detallan a
+  continuación. mewsplit no los incluye: los descarga cada usuario al usarlo.
+- Los acordes y los stems son estimaciones automáticas y pueden contener
+  errores.
+
+Este resumen es orientativo; lo que vale legalmente es el texto de
+[LICENSE](LICENSE).
+
+### Modelos y datos de terceros
+
 La detección de acordes usa **BTC** (Bi-directional Transformer for Chord
 recognition), de Jonggwon Park, Kyoyun Choi, Sungwook Jeon, Dokyun Kim y
 Jonghun Park — *"A Bi-Directional Transformer for Musical Chord Recognition"*
