@@ -1,6 +1,6 @@
 {
   "name": "mewsplit-frontend",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Interfaz de mewsplit. La misma build sirve a web y a escritorio (Tauri).",
   "scripts": {
