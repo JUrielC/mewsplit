@@ -44,7 +44,12 @@ if [ -z "$WHEEL" ]; then
   [ -n "$WHEEL" ] || fail "No se encontró ninguna versión publicada de mewsplit."
 fi
 
-say "→ Instalando mewsplit. La primera vez baja ~1 GB (PyTorch); puede tardar unos minutos."
+# La versión sale del nombre del wheel (mewsplit-<versión>-py3-none-any.whl),
+# sea ruta local o URL de la release: así el acceso directo no queda fijo.
+VERSION="$(basename "$WHEEL" | sed -n 's/^mewsplit-\([^-]*\)-.*\.whl$/\1/p')"
+VERSION="${VERSION:-0.0.0}"
+
+say "→ Instalando mewsplit $VERSION. La primera vez baja ~1 GB (PyTorch); puede tardar unos minutos."
 uv tool install --force --python 3.11 "$WHEEL"
 # --color never: uv pinta la ruta de color aun capturada, y los códigos ANSI
 # quedarían pegados a la ruta del ejecutable.
@@ -65,7 +70,7 @@ chmod +x "$APP/Contents/MacOS/mewsplit"
 
 # LSUIElement: sin icono en el Dock. El servidor corre en segundo plano, se
 # ve la ventana del navegador, y se apaga solo al cerrarla (ver app.py).
-cat > "$APP/Contents/Info.plist" <<'EOF'
+cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -75,7 +80,7 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
   <key>CFBundleIdentifier</key><string>app.mewsplit.launcher</string>
   <key>CFBundleExecutable</key><string>mewsplit</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>LSUIElement</key><true/>
 </dict>
 </plist>
@@ -84,6 +89,7 @@ EOF
 say ""
 say "Listo. mewsplit está en tu carpeta de Aplicaciones: búscalo con Spotlight (⌘ + espacio)."
 say "La primera canción tarda un poco más: se descargan los modelos (~100 MB)."
+say "Para actualizarlo, vuelve a ejecutar este mismo comando."
 say "Para desinstalarlo: uv tool uninstall mewsplit && rm -rf \"$APP\" ~/.cache/mewsplit"
 
 if [ -z "${MEWSPLIT_NO_LAUNCH:-}" ]; then

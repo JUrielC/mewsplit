@@ -47,9 +47,13 @@ Copia esto en ChatGPT, Claude, Gemini o el que uses:
 
 ### Actualizar o desinstalar
 
+Para **actualizar**, vuelve a pegar el mismo comando de instalación: siempre
+instala la última versión publicada y reemplaza la anterior.
+
+Para **desinstalar**:
+
 ```bash
-uv tool upgrade mewsplit                                               # actualizar
-uv tool uninstall mewsplit && rm -rf ~/Applications/mewsplit.app ~/.cache/mewsplit   # desinstalar
+uv tool uninstall mewsplit && rm -rf ~/Applications/mewsplit.app ~/.cache/mewsplit
 ```
 
 ### ¿Por qué un comando y no una app descargable?
