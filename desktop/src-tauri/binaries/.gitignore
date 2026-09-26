@@ -1,4 +1,4 @@
-# El Python empaquetado lo produce scripts/build-sidecar.sh. Pesa cientos de
-# MB (PyTorch) y no se versiona.
+# Aquí iría el sidecar del backend (con el nombre terminado en el target
+# triple de Rust). Nunca se versiona: empaquetado pesaría cientos de MB.
 *
 !.gitignore

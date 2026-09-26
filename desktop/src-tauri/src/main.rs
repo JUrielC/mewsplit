@@ -65,7 +65,7 @@ fn main() {
         .setup(|app| {
             let handle = app.handle().clone();
 
-            // El nombre real lleva el target triple; lo resuelve build-sidecar.sh.
+            // El nombre real lleva el target triple de Rust (así lo exige Tauri).
             let (mut events, _child) = app.shell().sidecar("mewsplit-backend")?.spawn()?;
 
             tauri::async_runtime::spawn(async move {
