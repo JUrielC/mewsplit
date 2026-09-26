@@ -134,16 +134,59 @@ def _running_instance() -> str | None:
         return None
 
 
+# Navegadores basados en Chromium: aceptan --app=URL, una ventana propia sin
+# barra de direcciones que se siente como una aplicación. Safari y Firefox no
+# tienen modo app; con ellos se abre una pestaña normal.
+APP_MODE_BROWSERS = {
+    "com.google.chrome",
+    "com.google.chrome.beta",
+    "com.google.chrome.canary",
+    "com.microsoft.edgemac",
+    "com.brave.browser",
+    "com.vivaldi.vivaldi",
+    "com.operasoftware.opera",
+    "org.chromium.chromium",
+}
+
+LAUNCH_SERVICES = (
+    Path.home()
+    / "Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure.plist"
+)
+
+
+def default_browser(handlers: list[dict]) -> str:
+    """
+    Identificador del navegador por defecto según los manejadores de
+    LaunchServices: el que abre `https`. Sin ninguno asignado, macOS usa
+    Safari, que es el de fábrica.
+    """
+    for handler in handlers:
+        if handler.get("LSHandlerURLScheme") == "https" and handler.get("LSHandlerRoleAll"):
+            return handler["LSHandlerRoleAll"].lower()
+    return "com.apple.safari"
+
+
+def _read_handlers() -> list[dict]:
+    import plistlib
+
+    try:
+        return plistlib.loads(LAUNCH_SERVICES.read_bytes()).get("LSHandlers", [])
+    except (OSError, plistlib.InvalidFileException):
+        return []
+
+
 def open_window(url: str) -> None:
     """
-    En una ventana propia si hay Chrome (modo app, sin barra de navegador);
-    si no, en el navegador por defecto.
+    En el navegador por defecto del usuario, no en uno elegido por nosotros:
+    en modo app si es de la familia Chromium, y en una pestaña si no.
     """
-    chrome = Path("/Applications/Google Chrome.app")
-    if sys.platform == "darwin" and chrome.exists():
-        subprocess.run(["open", "-na", str(chrome), "--args", f"--app={url}"], check=False)
-    else:
-        webbrowser.open(url)
+    if sys.platform == "darwin":
+        browser = default_browser(_read_handlers())
+        if browser in APP_MODE_BROWSERS:
+            # -n: aunque el navegador ya esté abierto, así recibe --app.
+            subprocess.run(["open", "-nb", browser, "--args", f"--app={url}"], check=False)
+            return
+    webbrowser.open(url)
 
 
 def say(message: str) -> None:

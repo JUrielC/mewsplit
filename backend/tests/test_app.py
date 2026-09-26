@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from mewsplit import api
 from mewsplit import app as launcher
-from mewsplit.app import build_app
+from mewsplit.app import APP_MODE_BROWSERS, build_app, default_browser
 
 
 @pytest.fixture
@@ -72,3 +72,25 @@ def test_shuts_down_when_no_window_has_checked_in(monkeypatch):
 
 def test_never_shuts_down_in_the_middle_of_an_analysis(monkeypatch):
     assert not _watch(monkeypatch, busy=True).decided_to_exit
+
+
+def _https(bundle: str) -> dict:
+    return {"LSHandlerURLScheme": "https", "LSHandlerRoleAll": bundle}
+
+
+def test_default_browser_is_the_one_that_opens_https():
+    mail = {"LSHandlerURLScheme": "mailto", "LSHandlerRoleAll": "com.apple.mail"}
+    handlers = [mail, _https("com.Brave.Browser")]
+    assert default_browser(handlers) == "com.brave.browser"
+
+
+def test_without_a_handler_the_default_is_safari():
+    """Es el navegador de fábrica: macOS no guarda nada hasta que el usuario elige otro."""
+    assert default_browser([]) == "com.apple.safari"
+
+
+def test_only_chromium_browsers_get_app_mode():
+    assert "com.brave.browser" in APP_MODE_BROWSERS
+    assert "com.google.chrome" in APP_MODE_BROWSERS
+    assert "com.apple.safari" not in APP_MODE_BROWSERS
+    assert "org.mozilla.firefox" not in APP_MODE_BROWSERS
