@@ -68,6 +68,22 @@ async function errorMessage(response: Response): Promise<string> {
   }
 }
 
+/**
+ * Avisa al backend cada minuto de que la página sigue abierta.
+ *
+ * Instalado como aplicación local, el servidor se apaga solo tras unos
+ * minutos sin noticias de ninguna ventana (IDLE_SECONDS en
+ * backend/mewsplit/app.py). En desarrollo o en web no hace nada más que eso.
+ * Devuelve la función que lo detiene.
+ */
+export function keepAlive(everyMs = 60_000): () => void {
+  const { api } = getConfig();
+  const id = setInterval(() => {
+    fetch(`${api}/health`).catch(() => {});
+  }, everyMs);
+  return () => clearInterval(id);
+}
+
 export function getHealth(): Promise<Health> {
   return request<Health>("/health");
 }

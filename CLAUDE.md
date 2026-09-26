@@ -16,7 +16,7 @@ con marcas de tiempo, y un mezclador para escuchar con volúmenes por pista.
 # Backend
 cd backend
 uv venv .venv --python 3.11 && uv pip install -e ".[dev]"
-.venv/bin/pytest                      # 50 pruebas, no descargan modelos
+.venv/bin/pytest                      # 58 pruebas, no descargan modelos
 .venv/bin/pytest -m slow              # las que separan audio de verdad
 .venv/bin/pytest tests/test_core.py::test_stopwatch_records_the_stage
 cp .env.example .env                  # una vez: fija puerto y token de desarrollo
@@ -32,6 +32,10 @@ npm run typecheck && npm run build
 
 # Contrato tipado: regenerar tras CUALQUIER cambio en los modelos de api.py
 ./scripts/gen-types.sh
+
+# Paquete para usuarios (wheel con la interfaz dentro) y su instalador
+./scripts/build-release.sh
+MEWSPLIT_WHEEL=dist/mewsplit-0.1.0-py3-none-any.whl MEWSPLIT_APP_DIR=/tmp/apps sh scripts/install.sh
 ```
 
 `pipeline/` y `design/` son las pruebas originales de las que salió esto.
@@ -61,12 +65,15 @@ backend/mewsplit/
   separation.py   audio-separator; separate() y build_instrumental()
   chords.py       BTC; detect_chords(), cachea el modelo por vocabulario
   api.py          FastAPI: trabajos en segundo plano, token, puerto dinámico
+  app.py          el comando `mewsplit`: envuelve api, sirve la interfaz, abre la ventana
+  web/            interfaz compilada, GENERADA por build-release.sh e ignorada por git
 backend/cli.py    argparse sobre core
 backend/bench.py  consume las funciones sueltas, no analyze(): necesita otro orden
 backend/bench_chords.py  mide variantes de acordes contra GuitarSet (mir_eval)
 frontend/lib/audio.ts   el mezclador (Web Audio API)
 frontend/lib/api.ts     cliente HTTP, tipos importados de shared/types.ts
-desktop/src-tauri/      cáscara; tauri.conf.json va DENTRO de src-tauri/
+scripts/install.sh      instalador de una línea: uv, el wheel y el acceso directo
+desktop/src-tauri/      Tauri, EN PAUSA (ver Distribución)
 shared/types.ts         GENERADO, no editar a mano
 ```
 
@@ -75,8 +82,9 @@ Dos contratos que hay que respetar al tocar los extremos:
 - **Arranque del sidecar**: `api.run()` imprime
   `MEWSPLIT_READY port=<n> token=<t>` como primera línea de stdout.
   `desktop/src-tauri/src/main.rs` la parsea. Cambiar el formato rompe el escritorio.
-- **Configuración en el cliente**: Tauri inyecta `window.__MEWSPLIT__` como
-  script de inicialización antes de que corra el JS de la página; en web los
+- **Configuración en el cliente**: `app.py` (y antes Tauri) inyecta
+  `window.__MEWSPLIT__` en el `<head>` antes de que corra el JS de la página,
+  con `api: ""` porque interfaz y API comparten origen; en `next dev` los
   valores salen de `NEXT_PUBLIC_MEWSPLIT_*`. Todo eso está en `lib/api.ts`.
 - **Puerto y token en desarrollo**: `backend/.env` es la FUENTE ÚNICA. Lo leen
   `api.py` al arrancar y `frontend/next.config.ts` al levantar `next dev`.
@@ -199,6 +207,23 @@ el patrón de nombres del modelo, ese mapeo se rompe en silencio.
 **Los nombres de modelo cambian entre releases.** Confirma con
 `audio-separator --list_models` antes de fijar uno.
 
+**`audio-separator` se niega a arrancar sin `ffmpeg` en el PATH**, y quien
+instala mewsplit para tocar no tiene Homebrew. `separation.ensure_ffmpeg()`
+usa el del sistema si lo hay y si no el que trae `imageio-ffmpeg`, enlazado
+como `ffmpeg` en `~/.cache/mewsplit/bin` (el binario se llama
+`ffmpeg-macos-aarch64-v7.1` y audio-separator busca el nombre literal). En
+esta máquina todo funcionaba porque Homebrew lo tenía: pruébalo con
+`PATH=/usr/bin:/bin`.
+
+**`uv tool dir --bin` pinta la ruta de color aun capturada.** Sin
+`--color never`, los códigos ANSI quedan pegados a la ruta y el instalador no
+encontraba el ejecutable que acababa de instalar.
+
+**Uvicorn relanza la señal de cierre** después de apagarse, así que un
+`finally` alrededor de `server.run()` no llega a correr. Por eso
+`instance.json` puede quedar obsoleto y `_running_instance` pregunta a
+`/health` antes de fiarse.
+
 **`AutoModel.from_pretrained` se traga `large_voca`.** Lo guarda como atributo
 de configuración y el `from_pretrained` propio de BTC nunca lo recibe: siempre
 cargaba el de 170 clases y `--simple-chords` no hacía nada, sin error.
@@ -254,16 +279,13 @@ lo "simplifica", vuelve el desfase.
 - **El almacén de trabajos de `api.py` está en memoria.** En escritorio da igual
   (el proceso muere con la app); un despliegue web con varios workers necesita
   otra cosa.
-- **El frontend no se ha probado contra una canción real de punta a punta.**
-  Compila y el mezclador está resuelto, pero nadie ha subido un MP3 todavía.
 - **La UI aún no pinta los acordes en cuanto llegan.** El backend ya los
   publica con `chords_ready` a los ~2s; `page.tsx` sigue esperando a `done`
   para montar el `<Studio>`.
-- **`desktop/` no se ha compilado nunca**: falta Rust en la máquina. Además hay
-  que generar los iconos (`npx tauri icon`) antes de la primera build.
-- **Empaquetado**: `scripts/build-sidecar.sh` está escrito pero sin ejecutar.
-  Juntar Python, PyTorch y los checkpoints es la parte más ingrata y no aporta
-  información hasta que todo lo demás funcione.
+- **Publicar**: `install.sh` baja el wheel de la última GitHub Release, así
+  que no funciona para nadie hasta que el repositorio sea público y haya una
+  release con el wheel de `build-release.sh`.
+- **El acceso directo no tiene icono** (usa el genérico de macOS).
 
 ## Convenciones
 
@@ -316,19 +338,15 @@ fuente de verdad para el frontend.
 
 ## Estado y prioridades
 
-El backend está completo y medido: `core.py`, `api.py`, CLI, bench y 50
-pruebas en verde. El frontend compila y el mezclador está resuelto.
-
-**Lo siguiente**: probarlo de punta a punta con una canción real. Subir un MP3
-desde `next dev`, ver las formas de onda con los acordes debajo, comprobar que
-las cuatro pistas suenan en fase. Feo pero completo.
+El backend está completo y medido: `core.py`, `api.py`, CLI, bench y 58
+pruebas en verde. Probado de punta a punta con canciones reales, y el comando
+`mewsplit` instalado con `install.sh` en una carpeta aislada, sin Homebrew.
 
 **Ya resuelto, no rehacer**: la sincronización entre Web Audio API y la línea de
 tiempo era el corazón técnico del frontend y está en `lib/audio.ts` con el
 porqué escrito. El puerto dinámico y el token local también están hechos.
 
-**Dejar para el final**: el empaquetado con Tauri. `desktop/` está escrito pero
-sin compilar, y así puede seguir semanas.
+**En pausa**: `desktop/` (Tauri). Escrito, nunca compilado. Ver Distribución.
 
 Fuera de alcance por ahora: transcripción a MIDI, detección de tempo y compás,
 edición manual de acordes, cuentas de usuario, historial.
@@ -353,10 +371,23 @@ vocabulario ilimitado e inversiones reales desde el stem de bajo.
 
 ## Distribución
 
-GitHub Releases con binario sin firmar. El usuario abre con clic derecho la
-primera vez para saltar Gatekeeper; documentarlo en el README como decisión,
-no como omisión.
+**Un comando con uv, no un `.dmg`.** El público son músicos, no gente técnica.
+Un binario sin firmar bajado con el navegador lleva la marca de cuarentena y
+Gatekeeper lo bloquea; desde macOS Sequoia el clic derecho → Abrir ya no lo
+salta (hay que ir a Configuración del Sistema), y ahí es donde la gente se
+rinde. Lo que instala uv desde la terminal no lleva esa marca, y el
+`mewsplit.app` que crea `install.sh` nace en la propia Mac, así que tampoco.
 
-La App Store no es viable: exige sandboxing, que pelea con el sidecar de Python
-y con la descarga de checkpoints en runtime. La exención de cuota de Apple es
-solo para organizaciones, no para individuos.
+El acceso directo es un `.app` con un script que lanza el comando, con
+`LSUIElement` (sin icono en el Dock). El servidor se apaga solo tras
+`IDLE_SECONDS` sin noticias de la página (`keepAlive` en `lib/api.ts`), nunca
+a mitad de un análisis; si ya hay uno abierto, el acceso directo reabre la
+ventana en vez de levantar otro. Puerto fijo preferido (47820): si cambiara,
+cambiaría el origen y se perdería lo guardado en localStorage.
+
+**Tauri, en pausa; PyInstaller, descartado.** Un `--onefile` con PyTorch pesa
+1–2 GB y se descomprime en cada arranque. Si algún día se paga la cuenta de
+desarrollador de Apple (99 USD/año; la exención de cuota es solo para
+organizaciones) para firmar y notarizar, `desktop/` sirve lanzando el comando
+`mewsplit` en vez de un binario empaquetado. La App Store no es viable: exige
+sandboxing, que pelea con la descarga de modelos en tiempo de ejecución.

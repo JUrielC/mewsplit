@@ -17,6 +17,49 @@ Subes un archivo de audio y obtienes:
 Pensado para sacar canciones de oído, estudiar una línea de bajo, ensayar sin
 el instrumento que tocas tú o hacer un karaoke.
 
+## Instalación
+
+Necesitas una Mac con Apple Silicon (M1 o posterior). Abre la app **Terminal**
+(⌘ + espacio, escribe "Terminal"), pega esta línea y pulsa Enter:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/JUrielC/mewsplit/master/scripts/install.sh | sh
+```
+
+Cuando termine, mewsplit queda en tu carpeta de Aplicaciones: ábrelo con
+Spotlight (⌘ + espacio, "mewsplit") o con doble clic, como cualquier app. Se
+abre en una ventana del navegador y se cierra solo unos minutos después de
+cerrarla.
+
+La primera instalación descarga alrededor de 1 GB y la primera canción baja
+los modelos (~100 MB); después ya no hace falta volver a descargarlos.
+
+### Si prefieres que te guíe un asistente de IA
+
+Copia esto en ChatGPT, Claude, Gemini o el que uses:
+
+> Quiero instalar mewsplit en mi Mac. Guíame paso a paso, como a alguien que
+> nunca ha usado la Terminal: cómo abrir la aplicación Terminal, y luego que
+> pegue exactamente este comando y pulse Enter:
+> `curl -fsSL https://raw.githubusercontent.com/JUrielC/mewsplit/master/scripts/install.sh | sh`.
+> No me propongas otros comandos ni pasos alternativos. Si aparece un error,
+> pídeme que te pegue el mensaje completo y ayúdame a entenderlo.
+
+### Actualizar o desinstalar
+
+```bash
+uv tool upgrade mewsplit                                               # actualizar
+uv tool uninstall mewsplit && rm -rf ~/Applications/mewsplit.app ~/.cache/mewsplit   # desinstalar
+```
+
+### ¿Por qué un comando y no una app descargable?
+
+macOS bloquea las apps descargadas con el navegador si no están firmadas y
+notarizadas por Apple, y desde macOS Sequoia ya no basta con el clic derecho:
+hay que ir a Configuración del Sistema. Lo que se instala desde la Terminal no
+lleva esa marca de "descargado de internet", y el acceso directo lo crea el
+instalador en tu propia Mac, así que se abre sin avisos.
+
 ## Qué puede hacer
 
 ### Separación de pistas
@@ -100,14 +143,15 @@ con canciones reales.
 
 Pendiente:
 
-- **Escritorio**: `desktop/` (Tauri) está escrito pero no se ha compilado
-  todavía; tampoco el empaquetado del backend como sidecar.
+- **Ventana propia**: se abre en el navegador (en modo app si tienes Chrome).
+  `desktop/` (Tauri) está en pausa: sin firma de Apple, un `.dmg` descargado
+  es justo lo que macOS bloquea.
 - **Bucle de una sección**: el motor de audio ya lo soporta, pero aún no hay
   control en la interfaz.
 - **Acordes al instante**: el backend los publica a los ~2 s, pero la interfaz
   espera a que terminen los stems para mostrarlos.
 
-## Puesta en marcha
+## Desarrollo
 
 Requiere macOS con Apple Silicon, Python 3.11+, [uv](https://docs.astral.sh/uv/)
 y Node 20+.
@@ -117,7 +161,7 @@ y Node 20+.
 cd backend
 uv venv .venv --python 3.11 && uv pip install -e ".[dev]"
 cp .env.example .env                  # una sola vez: fija puerto y token
-.venv/bin/pytest                      # 50 pruebas, sin descargar modelos
+.venv/bin/pytest                      # 58 pruebas, sin descargar modelos
 .venv/bin/python -m mewsplit.api      # imprime MEWSPLIT_READY port=<n> token=<t>
 
 # Frontend, en otra terminal
@@ -133,6 +177,20 @@ La primera ejecución descarga los modelos: Demucs (84 MB) a
 `~/.cache/mewsplit/models` y BTC a `~/.cache/huggingface/`. Nada de eso va al
 repositorio.
 
+### Publicar una versión
+
+```bash
+scripts/build-release.sh    # interfaz estática + wheel en dist/
+```
+
+El wheel lleva la interfaz ya compilada, así que instalarlo no requiere Node.
+Se sube como asset de una GitHub Release; `scripts/install.sh` instala siempre
+el de la última. Para probar el instalador sin publicar nada:
+
+```bash
+MEWSPLIT_WHEEL=dist/mewsplit-0.1.0-py3-none-any.whl MEWSPLIT_APP_DIR=/tmp/apps sh scripts/install.sh
+```
+
 ## Arquitectura
 
 ```
@@ -140,10 +198,12 @@ backend/mewsplit/core.py         orquestación pura: recibe rutas, devuelve dato
 backend/mewsplit/separation.py   Demucs vía audio-separator
 backend/mewsplit/chords.py       BTC + decodificación propia de acordes
 backend/mewsplit/api.py          FastAPI: trabajos en segundo plano, token, puerto
+backend/mewsplit/app.py          el comando `mewsplit`: API + interfaz + ventana
 backend/cli.py                   la misma lógica desde la terminal
-frontend/                        Next.js: la misma build sirve a web y a escritorio
+frontend/                        Next.js: la misma build sirve a web y al comando
 frontend/lib/audio.ts            el mezclador (Web Audio API)
-desktop/                         Tauri: arranca el backend como sidecar
+scripts/install.sh               instalador de una línea para usuarios
+desktop/                         Tauri, en pausa (ver Distribución)
 shared/types.ts                  tipos del contrato, generados desde OpenAPI
 ```
 
@@ -217,18 +277,25 @@ corren en paralelo y los acordes no esperan a los stems.
 ## Alcance
 
 Dentro: separación en 4 o 6 stems, acordes con tiempos, mezclador, modos de
-práctica, exportación de mezclas, empaquetado de escritorio para macOS.
+práctica, exportación de mezclas, instalación de un comando en macOS.
 
 Fuera por ahora: transcripción a MIDI, detección de tempo y compás, edición de
 los acordes detectados, cuentas de usuario, historial.
 
 ## Distribución
 
-GitHub Releases con binario sin firmar. La primera vez hay que abrirlo con
-clic derecho para saltar Gatekeeper. Es una decisión, no una omisión: la App
-Store exige sandboxing, que choca con el sidecar de Python y con la descarga
-de modelos en tiempo de ejecución, y la exención de cuota de Apple es solo
-para organizaciones.
+Un comando de instalación con uv, no un `.dmg`. Un binario sin firmar bajado
+con el navegador lleva la marca de cuarentena y macOS lo bloquea; desde
+Sequoia ni siquiera vale el clic derecho, y el público de mewsplit no tiene
+por qué saber saltárselo. Lo instalado con uv desde la terminal no lleva esa
+marca, y el acceso directo `mewsplit.app` lo genera el instalador en la propia
+Mac, así que tampoco.
+
+Firmar y notarizar un `.dmg` requiere la cuenta de desarrollador de Apple
+(99 USD al año). Si algún día se paga, `desktop/` (Tauri) sirve con un cambio:
+lanzar el comando `mewsplit` en vez de un binario empaquetado. La App Store no
+es viable: exige sandboxing, que choca con la descarga de modelos en tiempo de
+ejecución.
 
 ## Licencia y atribución
 

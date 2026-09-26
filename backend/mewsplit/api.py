@@ -160,6 +160,12 @@ app.add_middleware(
 )
 
 
+def busy() -> bool:
+    """¿Hay algún trabajo en cola o en proceso? Para no apagar a mitad de un análisis."""
+    with _lock:
+        return any(job.status in (Status.QUEUED, Status.PROCESSING) for job in _jobs.values())
+
+
 def verify_token(x_mewsplit_token: str | None = Header(default=None)) -> None:
     if not secrets.compare_digest(x_mewsplit_token or "", TOKEN):
         raise HTTPException(status_code=401, detail="Token inválido o ausente")

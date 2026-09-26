@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-import { uploadAudio, waitForJob, type Job } from "@/lib/api";
+import { keepAlive, uploadAudio, waitForJob, type Job } from "@/lib/api";
 import { DropZone } from "@/components/DropZone";
 import { Studio } from "@/components/Studio";
 
@@ -10,6 +10,8 @@ export default function Page() {
   const [job, setJob] = useState<Job | null>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => keepAlive(), []);
 
   async function analyze(file: File, sixStems: boolean) {
     setError(null);

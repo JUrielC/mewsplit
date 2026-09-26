@@ -17,6 +17,9 @@ next-env.d.ts
 target/
 desktop/src-tauri/gen/
 
+# Interfaz compilada que se mete en el paquete de Python (scripts/build-release.sh)
+backend/mewsplit/web/
+
 # Salidas del pipeline
 output/
 bench_output/

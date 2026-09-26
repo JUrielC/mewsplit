@@ -1,5 +1,13 @@
 # desktop
 
+> **En pausa.** mewsplit se distribuye con un comando de instalación
+> (`scripts/install.sh`), no con un `.dmg`: sin la firma y notarización de
+> Apple, un binario descargado es justo lo que macOS bloquea. Si algún día se
+> firma, esta cáscara sirve lanzando el comando `mewsplit` en lugar del
+> binario de PyInstaller que genera `scripts/build-sidecar.sh`, que se
+> descartó (1–2 GB y se descomprime en cada arranque). Ver "Distribución" en
+> el README de la raíz.
+
 Cáscara de Tauri. No contiene lógica de producto: arranca `mewsplit-backend`
 como sidecar, lee la línea `MEWSPLIT_READY port=<n> token=<t>` de su stdout
 y abre la ventana con esos datos ya inyectados en `window.__MEWSPLIT__`.
