@@ -19,6 +19,7 @@ from mewsplit.chords import (
     simple_label,
     smooth,
     to_families,
+    tuning_to_apply,
 )
 
 SEGMENTS = [
@@ -163,3 +164,15 @@ def test_beat_pool_averages_frames_within_each_beat():
     pooled, owner = beat_pool(probs, beats)
     assert owner.tolist() == [0, 0, 1, 1, 2, 2]
     assert pooled.argmax(1).tolist() == [0, 1, 2]
+
+
+def test_small_detuning_is_left_alone():
+    """Estimar la afinación no es exacto: corregir unos cents de más solo mete ruido."""
+    assert tuning_to_apply(0.05) == 0.0
+    assert tuning_to_apply(-0.19) == 0.0
+
+
+def test_real_detuning_is_compensated():
+    """Nirvana, +43 cents: sin compensar, cada nota cae entre dos casillas del CQT."""
+    assert tuning_to_apply(0.43) == 0.43
+    assert tuning_to_apply(-0.3) == -0.3

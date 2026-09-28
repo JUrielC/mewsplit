@@ -250,7 +250,11 @@ fracción de segundo. mewsplit toma sus probabilidades y las decodifica:
    para no quedar absorbidos por el acorde vecino.
 3. Viterbi: cambiar de acorde "cuesta", así que un frame dudoso no alcanza a
    crear un acorde nuevo.
-4. La calidad (séptima, sus…) se decide por segmento, y solo se muestra si
+4. Compensación de afinación: si la grabación está desafinada más de 20 cents
+   (una guitarra bajada, una cinta a otra velocidad), el análisis se corre esa
+   cantidad. Sin esto, cada nota cae entre dos casillas del modelo y los
+   acordes saltan entre semitonos vecinos.
+5. La calidad (séptima, sus…) se decide por segmento, y solo se muestra si
    pesa 3 veces más que la tríada. Una séptima inventada choca al tocar
    encima; una omitida solo suena más simple.
 

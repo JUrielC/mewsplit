@@ -53,7 +53,8 @@ def detect_chords(
     _load(True, timer)
 
     with _timed(timer, "chords"):
-        probs = frame_probabilities(audio_path, large_vocabulary=True, overlap=True)
+        # tuning=None: compensa grabaciones desafinadas (ver cqt_features).
+        probs = frame_probabilities(audio_path, large_vocabulary=True, overlap=True, tuning=None)
         path = smooth(to_families(probs), SELF_PROBABILITY)
 
     if not large_vocabulary:
@@ -152,8 +153,59 @@ FAMILY_N = 48
 DIM_WEIGHT = 3.0
 
 
+# Por debajo de este desvío no se compensa. Estimar la afinación no es exacto,
+# y corregir unos pocos cents que no hacían falta solo mete ruido: en canciones
+# afinadas (todas las medidas quedan por debajo de 20 cents) empeoraba un poco
+# el resultado. Una grabación desafinada de verdad, como "The Man Who Sold The
+# World" de Nirvana (+43 cents), pasaba de acordes erráticos a su progresión.
+MIN_DETUNE_CENTS = 20
+
+
+def tuning_to_apply(estimated: float) -> float:
+    """El desvío estimado (en semitonos) si pasa el umbral; si no, 0."""
+    return estimated if abs(estimated) * 100 >= MIN_DETUNE_CENTS else 0.0
+
+
+def cqt_features(audio_path: str | Path, tuning: float | None = 0.0) -> np.ndarray:
+    """
+    Log-CQT [bins, T] con la misma ventana y parámetros que BTC
+    (`btc_src.features.audio_to_features`), más la afinación.
+
+    BTC aprendió con grabaciones afinadas a 440 Hz y calcula sus casillas de
+    frecuencia (un cuarto de tono cada una) contando con eso. Una grabación
+    desplazada ~45 cents pone cada nota entre dos casillas y el modelo duda
+    entre semitonos vecinos (G#/A, C#/D…). `tuning=None` estima el
+    desplazamiento de la grabación y, si pasa MIN_DETUNE_CENTS, corre las
+    casillas esa misma cantidad;
+    con 0.0 el resultado es idéntico al de BTC.
+    """
+    import librosa
+
+    sr = 22050
+    wav, _ = librosa.load(str(audio_path), sr=sr, mono=True)
+    if tuning is None:
+        # En fracciones de semitono; la CQT de BTC tiene 2 casillas por semitono.
+        tuning = tuning_to_apply(float(librosa.estimate_tuning(y=wav, sr=sr)))
+
+    def cqt(chunk: np.ndarray) -> np.ndarray:
+        return librosa.cqt(
+            chunk, sr=sr, n_bins=144, bins_per_octave=24, hop_length=2048, tuning=tuning * 2
+        )
+
+    # Bloques de 10 s sin solapar, como el original: el modelo se entrenó así.
+    window = int(sr * 10.0)
+    blocks = []
+    start = 0
+    while len(wav) > start + window:
+        blocks.append(cqt(wav[start:start + window]))
+        start += window
+    blocks.append(cqt(wav[start:]))
+    return np.log(np.abs(np.concatenate(blocks, axis=1)) + 1e-6)
+
+
 def frame_probabilities(
-    audio_path: str | Path, large_vocabulary: bool, overlap: bool = False
+    audio_path: str | Path, large_vocabulary: bool, overlap: bool = False,
+    tuning: float | None = 0.0,
 ) -> np.ndarray:
     """
     Probabilidades por frame [T, clases], una fila cada FRAME_SECONDS.
@@ -163,18 +215,11 @@ def frame_probabilities(
     promedian con peso triangular, para que cada frame lo decida un bloque en
     el que no está pegado al borde.
     """
-    import importlib
 
     import torch
 
     model = _load(large_vocabulary, timer=None)
-    # Queda importable tras cargar el modelo: from_pretrained añade el repo al path.
-    features = importlib.import_module("btc_src.features")
-
-    feat = features.audio_to_features(
-        str(audio_path), sr_target=22050, inst_len=10.0,
-        n_bins=144, bins_per_octave=24, hop_length=2048,
-    ).T
+    feat = cqt_features(audio_path, tuning).T
     feat = (feat - model._mean) / model._std
     frames = feat.shape[0]
 

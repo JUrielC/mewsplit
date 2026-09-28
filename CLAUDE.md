@@ -234,6 +234,17 @@ diálogos solo y se cierra, y el de producción no lleva esos ganchos.
 `instance.json` puede quedar obsoleto y `_running_instance` pregunta a
 `/health` antes de fiarse.
 
+**Una grabación desafinada destroza los acordes, y no es culpa del modelo.**
+"The Man Who Sold The World" (Nirvana, +43 cents) salía con 11 acordes
+distintos que se peleaban por pares: G#/A, C#/D, E/F, B/C. El `predict()`
+crudo daba 24; no lo causó la decodificación. BTC calcula sus casillas de
+frecuencia (cuarto de tono) contando con 440 Hz, y a ~45 cents cada nota cae
+entre dos. `cqt_features` estima la afinación y corre el CQT esa cantidad,
+solo si pasa `MIN_DETUNE_CENTS = 20`: debajo de eso corregir mete ruido, y
+todas las grabaciones medidas (GuitarSet, Billboard, Evidencias) están por
+debajo, así que su resultado es idéntico bit a bit. Nirvana pasa a su
+progresión real medio tono abajo (C#m, E, G#, B, G#7).
+
 **`AutoModel.from_pretrained` se traga `large_voca`.** Lo guarda como atributo
 de configuración y el `from_pretrained` propio de BTC nunca lo recibe: siempre
 cargaba el de 170 clases y `--simple-chords` no hacía nada, sin error.
