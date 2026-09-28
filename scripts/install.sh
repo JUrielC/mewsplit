@@ -9,7 +9,8 @@
 # aquí tampoco, porque nace en la propia Mac. Así se abre con doble clic.
 #
 # Variables para probar sin publicar nada:
-#   MEWSPLIT_WHEEL      ruta o URL del paquete (por defecto, la última release)
+#   MEWSPLIT_WHEEL      ruta o URL del paquete (por defecto, la última release;
+#                       si aún no hay ninguna definitiva, la pre-release más nueva)
 #   MEWSPLIT_APP_DIR    dónde crear mewsplit.app (por defecto, ~/Applications)
 #   MEWSPLIT_NO_LAUNCH  no abrir mewsplit al terminar
 set -eu
@@ -36,11 +37,20 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 command -v uv >/dev/null 2>&1 || fail "No se pudo instalar uv. Revisa tu conexión a internet y vuelve a intentarlo."
 
+# Primer .whl de una respuesta de la API de releases de GitHub.
+first_wheel() {
+  grep -o '"browser_download_url": *"[^"]*\.whl"' | head -1 | sed 's/.*"\(https[^"]*\)"/\1/'
+}
+
 WHEEL="${MEWSPLIT_WHEEL:-}"
 if [ -z "$WHEEL" ]; then
-  WHEEL="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
-    | grep -o '"browser_download_url": *"[^"]*\.whl"' | head -1 | sed 's/.*"\(https[^"]*\)"/\1/')" \
-    || true
+  # /releases/latest nunca devuelve una pre-release. Mientras no haya ninguna
+  # versión definitiva, se cae a la lista completa, que viene de la más nueva
+  # a la más vieja e incluye las pre-releases.
+  WHEEL="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null | first_wheel || true)"
+  if [ -z "$WHEEL" ]; then
+    WHEEL="$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=10" 2>/dev/null | first_wheel || true)"
+  fi
   [ -n "$WHEEL" ] || fail "No se encontró ninguna versión publicada de mewsplit."
 fi
 
@@ -60,16 +70,30 @@ say "→ Creando el acceso directo en $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 
-cat > "$APP/Contents/MacOS/mewsplit" <<EOF
+# La ventana nativa viaja dentro del paquete; se copia al acceso directo para
+# que mewsplit tenga su propio icono en el Dock y en Cmd+Tab.
+PYTHON="$(uv tool dir --color never)/mewsplit/bin/python"
+WINDOW="$("$PYTHON" -c 'import mewsplit.app as a; print(a.NATIVE_WINDOW if a.NATIVE_WINDOW.exists() else "")' 2>/dev/null || true)"
+
+if [ -n "$WINDOW" ]; then
+  cp "$WINDOW" "$APP/Contents/MacOS/mewsplit"
+  # MewsplitCommand: la ventana arranca este comando y lo detiene al cerrarse.
+  EXTRA_KEYS="  <key>MewsplitCommand</key><string>$BIN</string>
+  <key>NSHighResolutionCapable</key><true/>"
+else
+  # Paquete sin ventana nativa: un script que abre mewsplit en el navegador.
+  # LSUIElement: sin icono en el Dock; el servidor se apaga solo al cerrar la
+  # ventana del navegador (ver app.py).
+  cat > "$APP/Contents/MacOS/mewsplit" <<EOF
 #!/bin/sh
 # Lanza mewsplit sin terminal. La salida va a un log para poder diagnosticar.
 mkdir -p "\$HOME/Library/Logs"
 exec "$BIN" >> "$LOG" 2>&1
 EOF
+  EXTRA_KEYS="  <key>LSUIElement</key><true/>"
+fi
 chmod +x "$APP/Contents/MacOS/mewsplit"
 
-# LSUIElement: sin icono en el Dock. El servidor corre en segundo plano, se
-# ve la ventana del navegador, y se apaga solo al cerrarla (ver app.py).
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -81,10 +105,17 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundleExecutable</key><string>mewsplit</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
-  <key>LSUIElement</key><true/>
+  <key>LSMinimumSystemVersion</key><string>12.0</string>
+$EXTRA_KEYS
 </dict>
 </plist>
 EOF
+
+# Firma ad-hoc del paquete completo (no requiere cuenta de Apple; codesign
+# viene con macOS). El binario trae la firma del enlazador, pensada para un
+# ejecutable suelto: dentro de un .app, macOS espera una que selle también el
+# Info.plist, y sin ella `codesign -v` da el paquete por inválido.
+codesign --force --sign - "$APP" >/dev/null 2>&1 || true
 
 say ""
 say "Listo. mewsplit está en tu carpeta de Aplicaciones: búscalo con Spotlight (⌘ + espacio)."

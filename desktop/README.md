@@ -1,11 +1,9 @@
 # desktop
 
-> **En pausa.** mewsplit se distribuye con un comando de instalación
-> (`scripts/install.sh`), no con un `.dmg`: sin la firma y notarización de
-> Apple, un binario descargado es justo lo que macOS bloquea. Si algún día se
-> firma, esta cáscara sirve lanzando el comando `mewsplit` en lugar de un
-> binario de PyInstaller, que se descartó y se borró (1–2 GB y se descomprime
-> en cada arranque). Ver "Distribución" en el README de la raíz.
+> **Superado.** La ventana propia de mewsplit es ahora nativa
+> (`native/macos/main.swift`) y se distribuye dentro del paquete que instala
+> uv, sin firma de Apple ni Rust. Esta cáscara de Tauri ya no se usa; se
+> conserva solo como referencia. Ver "Distribución" en el README de la raíz.
 
 Cáscara de Tauri. No contiene lógica de producto: arranca `mewsplit-backend`
 como sidecar, lee la línea `MEWSPLIT_READY port=<n> token=<t>` de su stdout

@@ -27,9 +27,9 @@ curl -fsSL https://raw.githubusercontent.com/JUrielC/mewsplit/master/scripts/ins
 ```
 
 Cuando termine, mewsplit queda en tu carpeta de Aplicaciones: ábrelo con
-Spotlight (⌘ + espacio, "mewsplit") o con doble clic, como cualquier app. Se
-abre en una ventana del navegador y se cierra solo unos minutos después de
-cerrarla.
+Spotlight (⌘ + espacio, "mewsplit") o con doble clic, como cualquier app:
+tiene su propia ventana y su propio icono en el Dock, y al cerrarla se
+detiene del todo.
 
 La primera instalación descarga alrededor de 1 GB y la primera canción baja
 los modelos (~100 MB); después ya no hace falta volver a descargarlos.
@@ -147,9 +147,7 @@ con canciones reales.
 
 Pendiente:
 
-- **Ventana propia**: se abre en el navegador (en modo app si tienes Chrome).
-  `desktop/` (Tauri) está en pausa: sin firma de Apple, un `.dmg` descargado
-  es justo lo que macOS bloquea.
+- **Logo**: la app usa el icono genérico de macOS.
 - **Bucle de una sección**: el motor de audio ya lo soporta, pero aún no hay
   control en la interfaz.
 - **Acordes al instante**: el backend los publica a los ~2 s, pero la interfaz
@@ -184,15 +182,17 @@ repositorio.
 ### Publicar una versión
 
 ```bash
-scripts/build-release.sh    # interfaz estática + wheel en dist/
+scripts/build-release.sh    # interfaz estática + ventana nativa + wheel en dist/
 ```
 
-El wheel lleva la interfaz ya compilada, así que instalarlo no requiere Node.
+Requiere las Command Line Tools de Xcode (`xcode-select --install`) para
+compilar la ventana. El wheel lleva la interfaz y la ventana ya compiladas,
+así que instalarlo no requiere Node ni Xcode.
 Se sube como asset de una GitHub Release; `scripts/install.sh` instala siempre
 el de la última. Para probar el instalador sin publicar nada:
 
 ```bash
-MEWSPLIT_WHEEL=dist/mewsplit-0.1.0-py3-none-any.whl MEWSPLIT_APP_DIR=/tmp/apps sh scripts/install.sh
+MEWSPLIT_WHEEL="$(ls dist/*.whl)" MEWSPLIT_APP_DIR=/tmp/apps sh scripts/install.sh
 ```
 
 ## Arquitectura
@@ -203,11 +203,12 @@ backend/mewsplit/separation.py   Demucs vía audio-separator
 backend/mewsplit/chords.py       BTC + decodificación propia de acordes
 backend/mewsplit/api.py          FastAPI: trabajos en segundo plano, token, puerto
 backend/mewsplit/app.py          el comando `mewsplit`: API + interfaz + ventana
+native/macos/main.swift          la ventana nativa: lanza el servidor y muestra la interfaz
 backend/cli.py                   la misma lógica desde la terminal
 frontend/                        Next.js: la misma build sirve a web y al comando
 frontend/lib/audio.ts            el mezclador (Web Audio API)
 scripts/install.sh               instalador de una línea para usuarios
-desktop/                         Tauri, en pausa (ver Distribución)
+desktop/                         Tauri, superado por la ventana nativa
 shared/types.ts                  tipos del contrato, generados desde OpenAPI
 ```
 
@@ -292,14 +293,13 @@ Un comando de instalación con uv, no un `.dmg`. Un binario sin firmar bajado
 con el navegador lleva la marca de cuarentena y macOS lo bloquea; desde
 Sequoia ni siquiera vale el clic derecho, y el público de mewsplit no tiene
 por qué saber saltárselo. Lo instalado con uv desde la terminal no lleva esa
-marca, y el acceso directo `mewsplit.app` lo genera el instalador en la propia
-Mac, así que tampoco.
+marca.
 
-Firmar y notarizar un `.dmg` requiere la cuenta de desarrollador de Apple
-(99 USD al año). Si algún día se paga, `desktop/` (Tauri) sirve con un cambio:
-lanzar el comando `mewsplit` en vez de un binario empaquetado. La App Store no
-es viable: exige sandboxing, que choca con la descarga de modelos en tiempo de
-ejecución.
+Eso incluye la ventana nativa (`native/macos/main.swift`): viaja compilada
+dentro del paquete de Python, y el instalador la copia en `mewsplit.app`. Así
+mewsplit es una app de verdad, con ventana e icono propios, sin firma ni
+notarización de Apple (99 USD al año). La App Store no es viable: exige
+sandboxing, que choca con la descarga de modelos en tiempo de ejecución.
 
 ## Licencia y atribución
 

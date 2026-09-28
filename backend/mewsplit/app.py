@@ -26,6 +26,16 @@ from pathlib import Path
 # paquete; en el repositorio no existe y está ignorada por git.
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
+# La ventana nativa de macOS (native/macos/main.swift), compilada por
+# build-release.sh. Con ella mewsplit tiene su propio icono en el Dock en vez
+# de ser una ventana más del navegador. Si no está, se usa el navegador.
+NATIVE_WINDOW = Path(__file__).resolve().parent / "bin" / "mewsplit-window"
+
+# Contrato con la ventana nativa: cuando es ella quien arranca el servidor
+# (MEWSPLIT_NATIVE=1), espera esta línea en stdout para saber qué cargar y si
+# el servidor es suyo (lo detiene al cerrarse) o ya existía (no lo toca).
+READY_PREFIX = "MEWSPLIT_APP_READY"
+
 # Puerto fijo preferido: el origen incluye el puerto, y si cambiara en cada
 # arranque el navegador olvidaría lo guardado en localStorage (el modo
 # simples/completos, por ejemplo). Si está ocupado, cualquiera libre.
@@ -175,11 +185,20 @@ def _read_handlers() -> list[dict]:
         return []
 
 
+def ready_line(url: str, owner: str) -> str:
+    return f"{READY_PREFIX} url={url} owner={owner}"
+
+
 def open_window(url: str) -> None:
     """
-    En el navegador por defecto del usuario, no en uno elegido por nosotros:
-    en modo app si es de la familia Chromium, y en una pestaña si no.
+    En la ventana nativa si el paquete la trae. Si no, en el navegador por
+    defecto del usuario: en modo app si es de la familia Chromium, y en una
+    pestaña si no.
     """
+    if sys.platform == "darwin" and NATIVE_WINDOW.exists():
+        # Solo ventana: el servidor lo lleva este proceso, no ella.
+        subprocess.Popen([str(NATIVE_WINDOW), url])
+        return
     if sys.platform == "darwin":
         browser = default_browser(_read_handlers())
         if browser in APP_MODE_BROWSERS:
@@ -202,11 +221,15 @@ def main() -> None:
             "genera el paquete con scripts/build-release.sh."
         )
 
-    browser = not os.environ.get("MEWSPLIT_NO_BROWSER")
+    native = bool(os.environ.get("MEWSPLIT_NATIVE"))
+    browser = not native and not os.environ.get("MEWSPLIT_NO_BROWSER")
 
     existing = _running_instance()
     if existing:
-        say(f"mewsplit ya está abierto en {existing}")
+        if native:
+            say(ready_line(existing, "existing"))
+        else:
+            say(f"mewsplit ya está abierto en {existing}")
         if browser:
             open_window(existing)
         return
@@ -226,6 +249,9 @@ def main() -> None:
             time.sleep(0.1)
         STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
         STATE_FILE.write_text(json.dumps({"url": url, "pid": os.getpid()}))
+        if native:
+            say(ready_line(url, "new"))
+            return
         say(f"mewsplit está listo en {url}")
         minutes = IDLE_SECONDS // 60
         say(f"Se cierra solo {minutes} minutos después de cerrar su ventana (o Ctrl+C aquí).")

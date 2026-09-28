@@ -35,7 +35,7 @@ npm run typecheck && npm run build
 
 # Paquete para usuarios (wheel con la interfaz dentro) y su instalador
 ./scripts/build-release.sh
-MEWSPLIT_WHEEL=dist/mewsplit-0.1.0-py3-none-any.whl MEWSPLIT_APP_DIR=/tmp/apps sh scripts/install.sh
+MEWSPLIT_WHEEL="$(ls dist/*.whl)" MEWSPLIT_APP_DIR=/tmp/apps sh scripts/install.sh
 ```
 
 `pipeline/` y `design/` son las pruebas originales de las que salió esto.
@@ -67,13 +67,15 @@ backend/mewsplit/
   api.py          FastAPI: trabajos en segundo plano, token, puerto dinámico
   app.py          el comando `mewsplit`: envuelve api, sirve la interfaz, abre la ventana
   web/            interfaz compilada, GENERADA por build-release.sh e ignorada por git
+  bin/            ventana nativa compilada, GENERADA por build-release.sh e ignorada
+native/macos/main.swift  la ventana nativa de macOS (Swift, WKWebView)
 backend/cli.py    argparse sobre core
 backend/bench.py  consume las funciones sueltas, no analyze(): necesita otro orden
 backend/bench_chords.py  mide variantes de acordes contra GuitarSet (mir_eval)
 frontend/lib/audio.ts   el mezclador (Web Audio API)
 frontend/lib/api.ts     cliente HTTP, tipos importados de shared/types.ts
 scripts/install.sh      instalador de una línea: uv, el wheel y el acceso directo
-desktop/src-tauri/      Tauri, EN PAUSA (ver Distribución)
+desktop/src-tauri/      Tauri, SUPERADO por native/macos (ver Distribución)
 shared/types.ts         GENERADO, no editar a mano
 ```
 
@@ -219,6 +221,14 @@ esta máquina todo funcionaba porque Homebrew lo tenía: pruébalo con
 `--color never`, los códigos ANSI quedan pegados a la ruta y el instalador no
 encontraba el ejecutable que acababa de instalar.
 
+**Una app lanzada por LaunchServices no puede leer `~/Documents` sin
+permiso.** Probando la ventana nativa con una instalación dentro del
+repositorio, el servidor se quedaba colgado al arrancar, sin CPU, esperando
+el permiso de privacidad. Prueba siempre con la instalación fuera de las
+carpetas protegidas (`/tmp`); la real vive en `~/.local`, que no lo está. El
+binario de pruebas se compila con `-D MEWSPLIT_AUTOTEST`: contesta los
+diálogos solo y se cierra, y el de producción no lleva esos ganchos.
+
 **Uvicorn relanza la señal de cierre** después de apagarse, así que un
 `finally` alrededor de `server.run()` no llega a correr. Por eso
 `instance.json` puede quedar obsoleto y `_running_instance` pregunta a
@@ -282,9 +292,10 @@ lo "simplifica", vuelve el desfase.
 - **La UI aún no pinta los acordes en cuanto llegan.** El backend ya los
   publica con `chords_ready` a los ~2s; `page.tsx` sigue esperando a `done`
   para montar el `<Studio>`.
-- **Publicar**: `install.sh` baja el wheel de la última GitHub Release, así
-  que no funciona para nadie hasta que el repositorio sea público y haya una
-  release con el wheel de `build-release.sh`.
+- **Solo hay pre-releases.** `install.sh` busca la release "latest" y, como
+  GitHub nunca marca así una pre-release, cae a la más nueva de la lista.
+  Cuando haya una versión definitiva, las pre-releases posteriores dejarán de
+  instalarse con el comando corto (solo con `MEWSPLIT_WHEEL`).
 - **El acceso directo no tiene icono** (usa el genérico de macOS).
 
 ## Convenciones
@@ -386,16 +397,28 @@ salta (hay que ir a Configuración del Sistema), y ahí es donde la gente se
 rinde. Lo que instala uv desde la terminal no lleva esa marca, y el
 `mewsplit.app` que crea `install.sh` nace en la propia Mac, así que tampoco.
 
-El acceso directo es un `.app` con un script que lanza el comando, con
-`LSUIElement` (sin icono en el Dock). El servidor se apaga solo tras
-`IDLE_SECONDS` sin noticias de la página (`keepAlive` en `lib/api.ts`), nunca
-a mitad de un análisis; si ya hay uno abierto, el acceso directo reabre la
-ventana en vez de levantar otro. Puerto fijo preferido (47820): si cambiara,
-cambiaría el origen y se perdería lo guardado en localStorage.
+**La ventana es nativa y viaja por uv.** `native/macos/main.swift` (Swift,
+WKWebView) se compila en `build-release.sh` con las Command Line Tools y va
+dentro del wheel, etiquetado `macosx_12_0_arm64`. Lo que baja uv no lleva
+cuarentena, así que tampoco ese binario: `install.sh` lo copia como ejecutable
+de `mewsplit.app` y firma el paquete ad-hoc (`codesign --sign -`, viene con
+macOS). Da ventana e icono propios en el Dock y en Cmd+Tab, sin mezclarse con
+las ventanas del navegador del usuario.
 
-**Tauri, en pausa; PyInstaller, descartado.** Un `--onefile` con PyTorch pesa
-1–2 GB y se descomprime en cada arranque. Si algún día se paga la cuenta de
-desarrollador de Apple (99 USD/año; la exención de cuota es solo para
-organizaciones) para firmar y notarizar, `desktop/` sirve lanzando el comando
-`mewsplit` en vez de un binario empaquetado. La App Store no es viable: exige
+Es lanzador y ventana a la vez: arranca el comando `mewsplit` (ruta en la
+clave `MewsplitCommand` del Info.plist) con `MEWSPLIT_NATIVE=1`, espera la
+línea `MEWSPLIT_APP_READY url=… owner=new|existing` y carga esa URL. Si el
+servidor es suyo lo detiene al cerrarse (SIGTERM y, al segundo, SIGKILL: el
+cierre ordenado esperaría al análisis en curso); si ya existía, no lo toca.
+Abrirla otra vez solo la trae al frente. Además de la página, avisa ella
+misma a `/health` cada minuto: WebKit pausa los temporizadores de una ventana
+minimizada y el servidor se apagaría por inactividad. Sin ventana nativa en el
+paquete, `install.sh` vuelve al acceso directo con script y navegador.
+
+Puerto fijo preferido (47820): si cambiara, cambiaría el origen y se perdería
+lo guardado en localStorage.
+
+**Tauri, superado; PyInstaller, descartado.** Un `--onefile` con PyTorch pesa
+1–2 GB y se descomprime en cada arranque, y la ventana nativa cubre lo que
+aportaba Tauri sin Rust ni firma de Apple. La App Store no es viable: exige
 sandboxing, que pelea con la descarga de modelos en tiempo de ejecución.

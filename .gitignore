@@ -19,6 +19,7 @@ desktop/src-tauri/gen/
 
 # Interfaz compilada que se mete en el paquete de Python (scripts/build-release.sh)
 backend/mewsplit/web/
+backend/mewsplit/bin/
 backend/LICENSE
 
 # Salidas del pipeline

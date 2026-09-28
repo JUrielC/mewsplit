@@ -44,9 +44,10 @@ mewsplit-api = "mewsplit.api:run"
 
 [tool.hatch.build.targets.wheel]
 packages = ["mewsplit"]
-# La interfaz compilada está ignorada por git (se genera en cada release) y
-# hatch descarta lo ignorado salvo que se declare como artefacto.
-artifacts = ["mewsplit/web/**"]
+# La interfaz y la ventana nativa compiladas están ignoradas por git (se
+# generan en cada release) y hatch descarta lo ignorado salvo que se declare
+# como artefacto.
+artifacts = ["mewsplit/web/**", "mewsplit/bin/**"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

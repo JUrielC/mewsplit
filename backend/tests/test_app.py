@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from mewsplit import api
 from mewsplit import app as launcher
-from mewsplit.app import APP_MODE_BROWSERS, build_app, default_browser
+from mewsplit.app import APP_MODE_BROWSERS, build_app, default_browser, ready_line
 
 
 @pytest.fixture
@@ -94,3 +94,10 @@ def test_only_chromium_browsers_get_app_mode():
     assert "com.google.chrome" in APP_MODE_BROWSERS
     assert "com.apple.safari" not in APP_MODE_BROWSERS
     assert "org.mozilla.firefox" not in APP_MODE_BROWSERS
+
+
+def test_ready_line_is_what_the_native_window_parses():
+    """native/macos/main.swift busca exactamente este formato en stdout."""
+    assert ready_line("http://127.0.0.1:47820", "new") == (
+        "MEWSPLIT_APP_READY url=http://127.0.0.1:47820 owner=new"
+    )
