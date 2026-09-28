@@ -149,7 +149,7 @@ class Job:
 _jobs: dict[str, Job] = {}
 _lock = threading.Lock()
 
-app = FastAPI(title="mewsplit", version="0.1.1")
+app = FastAPI(title="mewsplit", version="0.1.2")
 
 app.add_middleware(
     CORSMiddleware,
