@@ -66,6 +66,16 @@ instalador en tu propia Mac, así que se abre sin avisos.
 
 ## Qué puede hacer
 
+### Proyectos
+
+- Cada canción que subes queda guardada como proyecto, con sus stems y sus
+  acordes: al volver a abrir mewsplit sigue ahí, sin separarla otra vez.
+- Un panel lateral lista los proyectos; **+ nuevo** o arrastrar un audio a la
+  ventana crea uno, y se puede cambiar de proyecto mientras otro se analiza.
+- Eliminar un proyecto borra sus archivos. El panel se puede ocultar para
+  dejar todo el ancho a la línea de tiempo.
+- Los stems se guardan en FLAC (sin pérdida): unos 100–170 MB por canción.
+
 ### Separación de pistas
 
 - **4 stems** (por defecto): voz, bajo, batería y otros.
@@ -97,6 +107,10 @@ instalador en tu propia Mac, así que se abre sin avisos.
 - **Modos de práctica** de un clic: mezcla completa, aislar bajo, sin voz y
   sección rítmica (bajo + batería). Se calculan sobre los stems que existen,
   así que funcionan igual con 4 que con 6.
+- **Velocidad** de 50% a 150%, **sin cambiar el tono**: para sacar un pasaje
+  difícil más lento y seguir tocando en la tonalidad de la canción. Clic en
+  el porcentaje para volver a 100%. La mezcla exportada sale siempre a la
+  velocidad original.
 
 ### Backing tracks
 
@@ -250,13 +264,22 @@ fracción de segundo. mewsplit toma sus probabilidades y las decodifica:
    para no quedar absorbidos por el acorde vecino.
 3. Viterbi: cambiar de acorde "cuesta", así que un frame dudoso no alcanza a
    crear un acorde nuevo.
-4. Compensación de afinación: si la grabación está desafinada más de 20 cents
-   (una guitarra bajada, una cinta a otra velocidad), el análisis se corre esa
-   cantidad. Sin esto, cada nota cae entre dos casillas del modelo y los
-   acordes saltan entre semitonos vecinos.
+4. Afinación: se estima cuánto se desvía la grabación de La 440 (una copia
+   cambiada de tono, una cinta a otra velocidad) y se analiza en varias
+   afinaciones alrededor de esa estimación, quedándose con la que deja al
+   modelo más seguro. Sin esto, cada nota cae entre dos casillas del modelo y
+   los acordes saltan entre semitonos vecinos. Si el desvío es de 20 cents o
+   más, la app lo avisa e indica a qué La afinar el instrumento para tocar
+   encima.
 5. La calidad (séptima, sus…) se decide por segmento, y solo se muestra si
    pesa 3 veces más que la tríada. Una séptima inventada choca al tocar
    encima; una omitida solo suena más simple.
+6. Con los stems ya separados, un repaso busca acordes de paso con quinta
+   aumentada en una línea cromática (D# → D(#5) → C#), que el modelo confunde
+   con el mayor de su tercera (A#), y añade el bajo a los acordes invertidos
+   (`A#/D`) cuando el stem de bajo toca con claridad la tercera o la quinta. Las quintas solas (power chords) todavía
+   salen como mayores: el modelo no las tiene y el cromagrama no basta para
+   distinguirlas de una tríada.
 
 Medido en [GuitarSet](https://zenodo.org/records/3371780) (guitarristas que
 no se usaron para ajustar) y en 6 canciones de
@@ -285,11 +308,12 @@ corren en paralelo y los acordes no esperan a los stems.
 
 ## Alcance
 
-Dentro: separación en 4 o 6 stems, acordes con tiempos, mezclador, modos de
-práctica, exportación de mezclas, instalación de un comando en macOS.
+Dentro: separación en 4 o 6 stems, acordes con tiempos, proyectos guardados,
+mezclador, modos de práctica, exportación de mezclas, instalación de un
+comando en macOS.
 
 Fuera por ahora: transcripción a MIDI, detección de tempo y compás, edición de
-los acordes detectados, cuentas de usuario, historial.
+los acordes detectados, cuentas de usuario.
 
 ## Distribución
 
@@ -356,6 +380,11 @@ pesos **no se empaquetan ni se redistribuyen**: se descargan de Hugging Face
 en tiempo de ejecución. Si el proyecto se monetizara, habría que aclararlo con
 los autores o migrar a Basic Pitch de Spotify (Apache 2.0 para código y
 pesos).
+
+El cambio de velocidad sin cambiar el tono usa **SoundTouchJS**
+([cutterbl/SoundTouchJS](https://github.com/cutterbl/SoundTouchJS), MPL-2.0),
+port de SoundTouch de Olli Parviainen. Sus archivos se distribuyen sin
+modificar y bajo su propia licencia.
 
 La separación usa **Demucs v4** (Alexandre Défossez et al.) vía
 [audio-separator](https://github.com/nomadkaraoke/python-audio-separator).

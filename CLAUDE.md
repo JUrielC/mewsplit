@@ -64,7 +64,8 @@ backend/mewsplit/
   core.py         orquestación pura: Stopwatch, Analysis, analyze()
   separation.py   audio-separator; separate() y build_instrumental()
   chords.py       BTC; detect_chords(), cachea el modelo por vocabulario
-  api.py          FastAPI: trabajos en segundo plano, token, puerto dinámico
+  api.py          FastAPI: proyectos, análisis en segundo plano, token, puerto dinámico
+  projects.py     los proyectos en disco: project.json, audio original, stems en FLAC
   app.py          el comando `mewsplit`: envuelve api, sirve la interfaz, abre la ventana
   web/            interfaz compilada, GENERADA por build-release.sh e ignorada por git
   bin/            ventana nativa compilada, GENERADA por build-release.sh e ignorada
@@ -94,7 +95,7 @@ Dos contratos que hay que respetar al tocar los extremos:
   no se incrusta nada: el token llegaría dentro del binario distribuido.
 
 La API nunca devuelve rutas del disco del servidor: los stems se piden por
-nombre a `/jobs/{id}/stems/{name}`.
+nombre a `/projects/{id}/stems/{name}`.
 
 ## Decisiones ya tomadas
 
@@ -190,6 +191,42 @@ sin resolver a oído: en cinco puntos el original detecta `E:min` donde el
 instrumental detecta `G` — comparten dos notas, la diferencia está en si la
 tercera viene de la guitarra o de la melodía vocal.
 
+**Una excepción: la quinta aumentada de paso sí espera a los stems.** BTC no
+distingue D–A# (D con quinta aumentada, sin tercera) de A#–D (A# sin quinta):
+siempre dice A#. En "Hold me baby" (THE DO DO DO's) la progresión D#5 – D(#5)
+– C#5 – C5 salía D# – A# – C# – C. `refine_with_stems` mira el cromagrama de
+los stems armónicos (guitarra + piano + other, sin voz ni batería) y marca
+`X:(1,#5)` solo si el mayor tiene su tercera al frente, no tiene quinta Y está
+a medio tono de sus dos vecinos. Sin la línea cromática, las mismas notas son
+un mayor en primera inversión (`Bb:maj/3` en Billboard) y se dejan. Medido en
+`tests/powerchords/`: 0 cambios en GuitarSet y en Billboard, y los dos D(#5)
+de la canción en su proyecto de 6 stems. En el de 4 stems Viterbi ya lo había
+absorbido en el D# vecino y no hay tramo que corregir. Los acordes tempranos
+(`on_chords`) salen sin el repaso; ~1–3 s después de la separación.
+
+**El bajo de los acordes invertidos sale del stem de bajo, y solo si es claro.**
+El mismo repaso añade `/3`, `/b3` o `/5` (la interfaz lo muestra como `A#/D`)
+cuando la nota del stem de bajo es la tercera o la quinta y suena en el 75%
+del tramo (`BASS_SHARE`). La nota sale del CQT entre E1 y E4 y no del
+cromagrama, donde los armónicos del bajo pesan como notas. Medido en
+`tests/bass/` contra las inversiones de Billboard: muestra 49 s, acierta el
+71% y encuentra el 15% de las reales; majmin_inv .710 → .729 y la raíz no
+cambia. Conservador a propósito, como las séptimas. Descartado: tomar la nota
+más grave de guitarra y piano cuando el bajo calla (inventa inversiones en
+GuitarSet). Por eso la intro de "Hold me baby" no cambia: ahí no toca el bajo,
+lo más grave es el piano (F, F#, G#, que confirma A#, F#, G#) y la línea
+D# → D → C# → C que se oye es la guitarra en el registro medio. Las dos
+lecturas son válidas; la de la guitarra necesitaría separar voces (Basic Pitch).
+
+**Las quintas solas (power chords) NO se detectan, y no por falta de
+intentarlo.** BTC no tiene la clase "5" y dice mayor. Mirar si la tercera
+falta en el cromagrama de los stems no sirve: en GuitarSet las tríadas reales
+tienen la tercera tan débil (una cuerda de seis) como los power chords
+distorsionados (el armónico 5 de la raíz cae en la tercera). El umbral que
+encontraba las quintas de la canción convertía el 25–40% de las tríadas de
+GuitarSet y el 10% de las de Billboard. Hace falta transcripción de notas
+(Basic Pitch) o un modelo con quintas en su vocabulario.
+
 **`htdemucs_6s` (6 stems, con guitarra y piano) es opcional, no default.**
 Los 4 stems base pierden algo de calidad cuando el modelo también predice
 guitarra y piano. El piano sale con muchos artefactos; la guitarra sale bien.
@@ -239,11 +276,31 @@ diálogos solo y se cierra, y el de producción no lleva esos ganchos.
 distintos que se peleaban por pares: G#/A, C#/D, E/F, B/C. El `predict()`
 crudo daba 24; no lo causó la decodificación. BTC calcula sus casillas de
 frecuencia (cuarto de tono) contando con 440 Hz, y a ~45 cents cada nota cae
-entre dos. `cqt_features` estima la afinación y corre el CQT esa cantidad,
-solo si pasa `MIN_DETUNE_CENTS = 20`: debajo de eso corregir mete ruido, y
-todas las grabaciones medidas (GuitarSet, Billboard, Evidencias) están por
-debajo, así que su resultado es idéntico bit a bit. Nirvana pasa a su
-progresión real medio tono abajo (C#m, E, G#, B, G#7).
+entre dos. Nirvana pasa a su progresión real medio tono abajo (C#m, E, G#,
+B, G#7) corriendo el CQT esa cantidad.
+
+**Cómo se elige la afinación: la que deja al modelo más seguro.** Primero hubo
+un umbral fijo (compensar solo desde 20 cents), y falló con dos copias de la
+misma canción: la de Spotify medía +20.0 y la de YouTube +2 (una fue cambiada de
+tono sin cambiar el tempo), así que una se corregía y la otra no según un
+redondeo. `analyze_chords` prueba ahora la estándar, la estimada y la estimada
+±10 cents (`TUNING_SPREAD`) y se queda con la de mayor confianza media
+(`most_confident`). Medido en `tests/tuning/experiment.py` frente a umbral,
+compensar siempre y promediar: gana en todo (par Spotify/YouTube 73.8% → 77.2%
+de coincidencia; GuitarSet majmin .716 → .722; Billboard raíz .740 → .746) y
+Nirvana sigue bien. Cuesta 4 inferencias de acordes (~2–3 s), irrelevante
+frente a la separación. Lo que queda de diferencia entre esas dos copias son
+pasajes ambiguos entre acordes que comparten notas (D#/G#, D#/Cm). La
+compresión no influye: recomprimir a 128 kbps deja el 99% igual.
+
+La afinación estimada viaja al proyecto (`tuning_cents`) y la interfaz avisa
+desde 20 cents, con el La al que afinar el instrumento para tocar encima.
+El aviso va a todo el ancho bajo la cabecera hasta que se descarta (por
+proyecto, en localStorage); en la cabecera sola no se veía. Sugiere comparar
+con otra versión porque ese par lo demostró: ningún ajuste de afinación ni de
+ecualización llevó la copia de Spotify más allá del 77% de coincidencia con la
+de YouTube, que suena fiel. Una copia con el tono cambiado pierde información
+que el análisis no recupera.
 
 **`AutoModel.from_pretrained` se traga `large_voca`.** Lo guarda como atributo
 de configuración y el `from_pretrained` propio de BTC nunca lo recibe: siempre
@@ -258,6 +315,26 @@ carga aparece dentro del de separación, no antes.
 defecto, y macOS lo purga. `api.py` fija `~/.cache/mewsplit/models` vía
 `model_cache_dir`; el CLI usa el default salvo que le pases `--model-dir`. Los
 pesos de BTC van a `~/.cache/huggingface/`.
+
+**Los proyectos se guardan en disco, y eso tiene reglas.** Viven en
+`~/Library/Application Support/mewsplit/projects/<id>/` (`MEWSPLIT_PROJECTS_DIR`
+para pruebas): `project.json`, `original.<ext>` y `stems/*.flac`. La separación
+escribe WAV en una carpeta de trabajo temporal y al proyecto solo llegan los
+FLAC (sin pérdida, ~40–50% del WAV; una canción en WAV son 200–350 MB). El
+instrumental no se guarda: la interfaz no lo usa. Si la app se cierra a mitad,
+al arrancar el proyecto aparece como interrumpido en vez de "procesando" para
+siempre. Eliminar a mitad de un análisis no lo corta (no se puede): marca el
+proyecto y `_process` lo borra al terminar. La página pide el detalle de un
+proyecto solo al cambiar de estado, no en cada sondeo de la lista: un objeto
+nuevo cada segundo haría que Studio recargara los stems.
+
+**Dos separaciones a la vez tumban el servidor.** Subir varias canciones
+seguidas lanzaba un análisis por cada una en paralelo, y dos separaciones sobre
+la GPU (MPS) desde hilos distintos chocan dentro de Metal (`failed assertion
+_status < MTLCommandBufferStatusCommitted`): macOS mata el proceso entero, sin
+excepción que atrapar. `_analysis_slot` en `api.py` deja pasar un análisis a
+la vez; los demás esperan en "queued". No lo quites para "ganar velocidad":
+repartir la GPU tampoco es más rápido.
 
 **Los modos de práctica se calculan sobre los stems que existen.** "Sin voz"
 tenía escrita la lista `["bass","drums","other"]`: con 4 stems acertaba por
@@ -289,6 +366,20 @@ dos separaciones simultáneas se pisarían el callback. Si una versión nueva de
 `audio-separator` mueve esos módulos, el `ImportError` desactiva el progreso en
 silencio.
 
+**La velocidad se cambia en las fuentes y el tono se corrige al final.** Todas
+las pistas cambian `playbackRate` en el mismo instante del reloj (siguen en
+fase, sin reprogramarse) y un solo `SoundTouchNode` (@soundtouchjs/audio-worklet,
+MPL-2.0) tras el master compensa el tono. Corregir por pista exigiría un
+procesador por stem y podría desfasarlas; usar `<audio preservesPitch>` por
+pista rompe el reloj único. SoundTouch solo está en el camino si la velocidad
+no es 1 (a 1 no hay ni su retardo ni su procesado), el `time` del mezclador
+avanza `elapsed * rate`, y la mezcla exportada sale a velocidad original. La
+librería se importa dinámicamente: define su clase extendiendo
+`AudioWorkletNode` al cargarse y eso revienta el prerender de Next en Node. El
+procesador lo copia `frontend/scripts/copy-worklet.mjs` a `public/` antes de
+`dev` y `build`. Medido en WKWebView: a 80% la canción avanza 0.799 del reloj
+y un La de 440 Hz sigue en 440 (sin corrección bajaría a 352).
+
 **El mezclador se desincroniza si cada fuente arranca por su cuenta.** Las
 cuatro pistas se programan con el MISMO instante absoluto y el bucle lo hace el
 hilo de audio (`loop`/`loopStart`/`loopEnd`), no `requestAnimationFrame`. rAF
@@ -297,9 +388,10 @@ lo "simplifica", vuelve el desfase.
 
 ## Pendientes
 
-- **El almacén de trabajos de `api.py` está en memoria.** En escritorio da igual
-  (el proceso muere con la app); un despliegue web con varios workers necesita
-  otra cosa.
+- **Los proyectos viven en el disco local.** En escritorio es lo correcto; un
+  despliegue web con varios usuarios o workers necesitaría otro almacén.
+- **Reanalizar un proyecto.** El audio original se guarda justo para eso (por
+  ejemplo, tras mejorar los acordes), pero todavía no hay botón ni endpoint.
 - **La UI aún no pinta los acordes en cuanto llegan.** El backend ya los
   publica con `chords_ready` a los ~2s; `page.tsx` sigue esperando a `done`
   para montar el `<Studio>`.
@@ -371,7 +463,7 @@ porqué escrito. El puerto dinámico y el token local también están hechos.
 **En pausa**: `desktop/` (Tauri). Escrito, nunca compilado. Ver Distribución.
 
 Fuera de alcance por ahora: transcripción a MIDI, detección de tempo y compás,
-edición manual de acordes, cuentas de usuario, historial.
+edición manual de acordes, cuentas de usuario.
 
 ## Licencia
 
