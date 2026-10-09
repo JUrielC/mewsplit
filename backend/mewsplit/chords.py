@@ -34,15 +34,17 @@ QUALITY_MARGIN = 3.0
 _model_cache: dict[bool, object] = {}
 
 
-def detect_chords(
+def analyze_chords(
     audio_path: str | Path,
     large_vocabulary: bool = LARGE_VOCABULARY,
     timer: "Stopwatch | None" = None,
-) -> list[dict]:
+) -> tuple[list[dict], float]:
     """
-    Devuelve [{"start": 0.0, "end": 1.48, "chord": "C:maj7"}, ...] en notación Harte.
+    Acordes y afinación de la grabación.
 
-    El acorde "N" significa ausencia de armonía detectable (silencio, ruido).
+    Devuelve ([{"start": 0.0, "end": 1.48, "chord": "C:maj7"}, ...], cents):
+    los acordes en notación Harte ("N" es ausencia de armonía detectable) y el
+    desvío de la grabación respecto a La 440, en cents.
 
     Siempre corre el modelo de 170 clases: raíz y tiempos salen de su masa
     sumada por familia y suavizada con Viterbi; la calidad se decide después,
@@ -53,15 +55,34 @@ def detect_chords(
     _load(True, timer)
 
     with _timed(timer, "chords"):
-        # tuning=None: compensa grabaciones desafinadas (ver cqt_features).
-        probs = frame_probabilities(audio_path, large_vocabulary=True, overlap=True, tuning=None)
+        wav = load_audio(audio_path)
+        estimated = estimate_tuning(wav)
+        # La estándar, la estimada y la estimada ± TUNING_SPREAD: se analiza
+        # en las cuatro y se queda la que deja al modelo más seguro.
+        tunings = {0.0, estimated, estimated - TUNING_SPREAD, estimated + TUNING_SPREAD}
+        candidates = {
+            t: frame_probabilities(wav, large_vocabulary=True, overlap=True, tuning=t)
+            for t in tunings
+        }
+        probs = candidates[most_confident(candidates)]
         path = smooth(to_families(probs), SELF_PROBABILITY)
 
     if not large_vocabulary:
-        return path_to_segments(path, lambda family, _: simple_label(family))
-    return path_to_segments(
-        path, lambda family, frames: assign_quality(family, probs[frames], QUALITY_MARGIN)
-    )
+        segments = path_to_segments(path, lambda family, _: simple_label(family))
+    else:
+        segments = path_to_segments(
+            path, lambda family, frames: assign_quality(family, probs[frames], QUALITY_MARGIN)
+        )
+    return segments, round(estimated * 100, 1)
+
+
+def detect_chords(
+    audio_path: str | Path,
+    large_vocabulary: bool = LARGE_VOCABULARY,
+    timer: "Stopwatch | None" = None,
+) -> list[dict]:
+    """Solo los acordes de `analyze_chords`."""
+    return analyze_chords(audio_path, large_vocabulary, timer)[0]
 
 
 def _load(large_vocabulary: bool, timer: "Stopwatch | None"):
@@ -153,20 +174,31 @@ FAMILY_N = 48
 DIM_WEIGHT = 3.0
 
 
-# Por debajo de este desvío no se compensa. Estimar la afinación no es exacto,
-# y corregir unos pocos cents que no hacían falta solo mete ruido: en canciones
-# afinadas (todas las medidas quedan por debajo de 20 cents) empeoraba un poco
-# el resultado. Una grabación desafinada de verdad, como "The Man Who Sold The
-# World" de Nirvana (+43 cents), pasaba de acordes erráticos a su progresión.
-MIN_DETUNE_CENTS = 20
+SAMPLE_RATE = 22050
+
+# Las afinaciones que se prueban alrededor de la estimada, en semitonos.
+# Estimar la afinación no es exacto: en vez de fiarse de un número (o de un
+# umbral, que con una copia justo en el borde decidía por azar), se prueban
+# varias y se queda la que deja al modelo más seguro. Medido en
+# tests/tuning/experiment.py contra el umbral de 20 cents que había antes.
+TUNING_SPREAD = 0.10
 
 
-def tuning_to_apply(estimated: float) -> float:
-    """El desvío estimado (en semitonos) si pasa el umbral; si no, 0."""
-    return estimated if abs(estimated) * 100 >= MIN_DETUNE_CENTS else 0.0
+def load_audio(audio_path: str | Path) -> np.ndarray:
+    import librosa
+
+    wav, _ = librosa.load(str(audio_path), sr=SAMPLE_RATE, mono=True)
+    return wav
 
 
-def cqt_features(audio_path: str | Path, tuning: float | None = 0.0) -> np.ndarray:
+def estimate_tuning(wav: np.ndarray) -> float:
+    """Desvío de la grabación respecto a La 440, en semitonos (-0.5 a 0.5)."""
+    import librosa
+
+    return float(librosa.estimate_tuning(y=wav, sr=SAMPLE_RATE))
+
+
+def cqt_features(audio: str | Path | np.ndarray, tuning: float = 0.0) -> np.ndarray:
     """
     Log-CQT [bins, T] con la misma ventana y parámetros que BTC
     (`btc_src.features.audio_to_features`), más la afinación.
@@ -174,26 +206,22 @@ def cqt_features(audio_path: str | Path, tuning: float | None = 0.0) -> np.ndarr
     BTC aprendió con grabaciones afinadas a 440 Hz y calcula sus casillas de
     frecuencia (un cuarto de tono cada una) contando con eso. Una grabación
     desplazada ~45 cents pone cada nota entre dos casillas y el modelo duda
-    entre semitonos vecinos (G#/A, C#/D…). `tuning=None` estima el
-    desplazamiento de la grabación y, si pasa MIN_DETUNE_CENTS, corre las
-    casillas esa misma cantidad;
-    con 0.0 el resultado es idéntico al de BTC.
+    entre semitonos vecinos (G#/A, C#/D…). `tuning` (en semitonos) corre las
+    casillas esa cantidad; con 0.0 el resultado es idéntico al de BTC.
     """
     import librosa
 
-    sr = 22050
-    wav, _ = librosa.load(str(audio_path), sr=sr, mono=True)
-    if tuning is None:
-        # En fracciones de semitono; la CQT de BTC tiene 2 casillas por semitono.
-        tuning = tuning_to_apply(float(librosa.estimate_tuning(y=wav, sr=sr)))
+    wav = audio if isinstance(audio, np.ndarray) else load_audio(audio)
 
     def cqt(chunk: np.ndarray) -> np.ndarray:
+        # La CQT de BTC tiene 2 casillas por semitono.
         return librosa.cqt(
-            chunk, sr=sr, n_bins=144, bins_per_octave=24, hop_length=2048, tuning=tuning * 2
+            chunk, sr=SAMPLE_RATE, n_bins=144, bins_per_octave=24, hop_length=2048,
+            tuning=tuning * 2,
         )
 
     # Bloques de 10 s sin solapar, como el original: el modelo se entrenó así.
-    window = int(sr * 10.0)
+    window = int(SAMPLE_RATE * 10.0)
     blocks = []
     start = 0
     while len(wav) > start + window:
@@ -203,9 +231,19 @@ def cqt_features(audio_path: str | Path, tuning: float | None = 0.0) -> np.ndarr
     return np.log(np.abs(np.concatenate(blocks, axis=1)) + 1e-6)
 
 
+def confidence(probs: np.ndarray) -> float:
+    """Qué tan seguro está el modelo, en promedio: la masa de la familia ganadora."""
+    return float(to_families(probs).max(axis=1).mean())
+
+
+def most_confident(candidates: dict[float, np.ndarray]) -> float:
+    """La afinación cuyas probabilidades dejan al modelo más seguro."""
+    return max(candidates, key=lambda tuning: confidence(candidates[tuning]))
+
+
 def frame_probabilities(
-    audio_path: str | Path, large_vocabulary: bool, overlap: bool = False,
-    tuning: float | None = 0.0,
+    audio: str | Path | np.ndarray, large_vocabulary: bool, overlap: bool = False,
+    tuning: float = 0.0,
 ) -> np.ndarray:
     """
     Probabilidades por frame [T, clases], una fila cada FRAME_SECONDS.
@@ -219,7 +257,7 @@ def frame_probabilities(
     import torch
 
     model = _load(large_vocabulary, timer=None)
-    feat = cqt_features(audio_path, tuning).T
+    feat = cqt_features(audio, tuning).T
     feat = (feat - model._mean) / model._std
     frames = feat.shape[0]
 
@@ -375,3 +413,164 @@ def path_to_segments(
                 )
             start = i
     return segments
+
+
+
+# ---------------------------------------------------------------------------
+# Repaso con los stems: quinta aumentada de paso y nota del bajo
+#
+# BTC no distingue una quinta aumentada sin tercera (D–A#) de un mayor sin
+# quinta (A#–D): son las mismas notas, y siempre dice A#. Las notas del tramo
+# tampoco bastan: un A# en primera inversión (A#/D) suena igual. Lo que lo
+# decide es el contexto, la línea cromática D# → D → C# de un acorde de paso.
+#
+# Medido en tests/powerchords/: las quintas solas (power chords) NO se pueden
+# sacar así. En GuitarSet las tríadas reales tienen la tercera tan débil en el
+# cromagrama como los power chords distorsionados, y cualquier umbral que los
+# encontrara convertía el 25–40% de las tríadas. Hace falta transcribir notas.
+# ---------------------------------------------------------------------------
+
+# Stems donde está la armonía. Con 4 stems es "other"; con 6, guitarra y
+# piano salen de "other" y se vuelven a sumar.
+HARMONIC_STEMS = ("guitar", "piano", "other")
+CHROMA_HOP = 512
+
+# Sobre el perfil de notas del tramo, relativo a su nota más fuerte.
+SHARP_FIFTH_ROOT_MIN = 0.4
+SHARP_FIFTH_FIFTH_MAX = 0.3
+
+# El bajo se muestra (A#/D) solo si es la tercera o la quinta del acorde y
+# suena en el 75% del tramo. Medido en tests/bass/ contra Billboard: muestra
+# 49 s de inversiones con 71% de acierto y encuentra el 15% de las reales;
+# majmin_inv .710 → .729, la raíz no cambia. Conservador, como las séptimas:
+# un bajo inventado choca al tocar encima. La nota más grave de guitarra y
+# piano cuando el bajo calla no sirve: inventaba inversiones en GuitarSet.
+BASS_STEM = "bass"
+BASS_LOUD = 0.1  # fracción del percentil 90 de energía del stem: por debajo, calla
+BASS_SHARE = 0.75
+BASS_DEGREES = {"maj": {4: "3", 7: "5"}, "min": {3: "b3", 7: "5"}}
+
+
+def harmonic_chroma(stems: dict[str, Path], tuning_cents: float | None) -> np.ndarray | None:
+    """
+    Cromagrama [12, T] de la suma de los stems armónicos, sin normalizar por
+    frame: cada stem pesa según su energía, así un piano en silencio no
+    aporta ruido amplificado. Sin voz ni batería, que meten notas que el
+    acompañamiento no toca.
+    """
+    import librosa
+
+    total = None
+    for name in HARMONIC_STEMS:
+        if name not in stems:
+            continue
+        chroma = librosa.feature.chroma_cqt(
+            y=load_audio(stems[name]), sr=SAMPLE_RATE, hop_length=CHROMA_HOP,
+            tuning=(tuning_cents or 0.0) / 100, norm=None,
+        )
+        if total is None:
+            total = chroma
+        else:
+            frames = min(total.shape[1], chroma.shape[1])
+            total = total[:, :frames] + chroma[:, :frames]
+    return total
+
+
+def bass_notes(stems: dict[str, Path], tuning_cents: float | None) -> np.ndarray | None:
+    """
+    La nota del bajo por frame (clase de altura, -1 si calla), con el mismo
+    paso que `harmonic_chroma`.
+
+    Del CQT entre E1 y E4, no del cromagrama: el cromagrama suma octavas y
+    ahí los armónicos del bajo (la quinta es el tercero) pesan como notas.
+    """
+    import librosa
+
+    if BASS_STEM not in stems:
+        return None
+    magnitude = np.abs(librosa.cqt(
+        load_audio(stems[BASS_STEM]), sr=SAMPLE_RATE, hop_length=CHROMA_HOP,
+        fmin=librosa.note_to_hz("E1"), n_bins=36, bins_per_octave=12,
+        tuning=(tuning_cents or 0.0) / 100,
+    ))
+    energy = magnitude.sum(axis=0)
+    notes = (magnitude.argmax(axis=0) + ROOTS.index("E")) % 12
+    return np.where(energy >= BASS_LOUD * np.percentile(energy, 90), notes, -1)
+
+
+def with_bass(chord: str, notes: np.ndarray) -> str:
+    """La etiqueta con su bajo ("A#/3") si el bajo del tramo es su tercera o su quinta."""
+    name, _, quality = chord.partition(":")
+    notes = notes[notes >= 0]
+    if name not in ROOTS or "(" in quality or len(notes) == 0:
+        return chord
+    counts = np.bincount(notes, minlength=12)
+    bass = int(counts.argmax())
+    if counts[bass] < BASS_SHARE * len(notes):
+        return chord
+    kind = "min" if quality in MINOR_THIRD else "maj"
+    degree = BASS_DEGREES[kind].get((bass - ROOTS.index(name)) % 12)
+    return f"{chord}/{degree}" if degree else chord
+
+
+def sharp_fifth_root(chord: str, profile: np.ndarray) -> int | None:
+    """
+    Si el tramo puede ser una quinta aumentada sin tercera, su raíz.
+
+    Un mayor cuya tercera es la nota dominante y sin quinta: A# con D al
+    frente y sin F son D y La#. Solo es candidato; falta el contexto.
+    """
+    if chord not in ROOTS or profile.max() <= 0:
+        return None
+    level = profile / profile.max()
+    root = ROOTS.index(chord)
+    third = (root + 4) % 12
+    if (
+        int(level.argmax()) == third
+        and level[root] >= SHARP_FIFTH_ROOT_MIN
+        and level[(root + 7) % 12] <= SHARP_FIFTH_FIFTH_MAX
+    ):
+        return third
+    return None
+
+
+def _root(chord: str) -> int | None:
+    name = chord.partition(":")[0]
+    return ROOTS.index(name) if name in ROOTS else None
+
+
+def refine_with_stems(
+    segments: list[dict], chroma: np.ndarray | None, bass: np.ndarray | None = None
+) -> list[dict]:
+    """
+    Marca como X:(1,#5) los acordes de paso en una línea cromática y añade el
+    bajo a los acordes invertidos.
+
+    El candidato a quinta aumentada tiene que estar a medio tono de sus dos
+    vecinos, uno por arriba y otro por abajo (D# → D(#5) → C#). Sin esa línea,
+    las mismas notas son un mayor en primera inversión y se dejan como estaban.
+    """
+    frames_per_second = SAMPLE_RATE / CHROMA_HOP
+
+    def frames(segment: dict) -> slice:
+        start = int(segment["start"] * frames_per_second)
+        return slice(start, max(start + 1, int(segment["end"] * frames_per_second)))
+
+    output = [dict(s) for s in segments]
+    if chroma is not None and chroma.shape[1] > 0:
+        voiced = [i for i, s in enumerate(segments) if s["chord"] != "N"]
+        for k, i in enumerate(voiced[1:-1], start=1):
+            window = chroma[:, frames(segments[i])]
+            if window.shape[1] == 0:
+                continue
+            root = sharp_fifth_root(segments[i]["chord"], window.mean(axis=1))
+            if root is None:
+                continue
+            neighbours = {_root(segments[voiced[k - 1]]["chord"]), _root(segments[voiced[k + 1]]["chord"])}
+            if neighbours == {(root + 1) % 12, (root - 1) % 12}:
+                output[i]["chord"] = f"{ROOTS[root]}:(1,#5)"
+
+    if bass is not None:
+        for segment in output:
+            segment["chord"] = with_bass(segment["chord"], bass[frames(segment)])
+    return output

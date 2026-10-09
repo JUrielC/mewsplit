@@ -20,13 +20,32 @@
  *
  * Cada pista se reconstruye entera al buscar o al cambiar el bucle: un
  * `AudioBufferSourceNode` es de un solo uso.
+ *
+ * 4. **La velocidad no rompe ninguna de las tres.** Todas las fuentes cambian
+ *    su `playbackRate` en el mismo instante del reloj, así que siguen en fase,
+ *    y el tono se corrige DESPUÉS de mezclar, en un solo nodo (SoundTouch):
+ *    corregirlo por pista exigiría un procesador por stem y podría desfasarlas.
  */
+
+// Solo el tipo: la librería define su nodo extendiendo AudioWorkletNode al
+// importarse, y eso revienta al prerenderizar la página en Node.
+import type { SoundTouchNode } from "@soundtouchjs/audio-worklet";
 
 /** Margen para programar el arranque sin llegar tarde al hilo de audio. */
 const LOOKAHEAD = 0.02;
 
 /** Rampa corta en los cambios de ganancia; sin ella se oye un clic. */
 const RAMP = 0.015;
+
+/**
+ * Límites de velocidad. Fuera de este rango SoundTouch se oye cada vez peor
+ * (y por encima de 1.5 empieza a quedarse sin muestras en el hilo de audio).
+ */
+export const SPEED_MIN = 0.5;
+export const SPEED_MAX = 1.5;
+
+/** Lo sirve la interfaz; lo copia scripts/copy-worklet.mjs desde el paquete. */
+const PROCESSOR_URL = "/soundtouch-processor.js";
 
 export interface TrackInput {
   name: string;
@@ -74,6 +93,9 @@ export class Mixer {
   private position = 0;
   private currentLoop: Loop | null = null;
   private totalDuration = 0;
+  private rate = 1;
+  /** Corrector de tono; null hasta que se registra (o si el navegador no puede). */
+  private stretch: SoundTouchNode | null = null;
 
   constructor(ctx?: AudioContext) {
     this.ctx = ctx ?? new AudioContext();
@@ -93,18 +115,34 @@ export class Mixer {
     return this.currentLoop;
   }
 
+  /** Velocidad de reproducción: 1 es la original. */
+  get speed(): number {
+    return this.rate;
+  }
+
+  /** Si al cambiar la velocidad se mantiene el tono (hay corrector cargado). */
+  get keepsPitch(): boolean {
+    return this.stretch !== null;
+  }
+
   /**
-   * Posición actual en segundos, derivada del reloj del contexto.
-   * Es la que debe pintar el playhead.
+   * Posición actual en segundos de la canción, derivada del reloj del
+   * contexto. Es la que debe pintar el playhead.
    */
   get time(): number {
+    return this.timeAt(this.ctx.currentTime);
+  }
+
+  /** Posición de la canción en un instante dado del reloj del contexto. */
+  private timeAt(contextTime: number): number {
     if (!this.isPlaying) return this.position;
 
-    const elapsed = this.ctx.currentTime - this.contextStart;
+    const elapsed = contextTime - this.contextStart;
     // Antes del instante programado el audio aún no ha empezado a sonar.
     if (elapsed <= 0) return this.position;
 
-    let t = this.position + elapsed;
+    // A velocidad 0.5, cada segundo de reloj avanza medio segundo de canción.
+    let t = this.position + elapsed * this.rate;
 
     if (this.currentLoop) {
       const { start, end } = this.currentLoop;
@@ -214,6 +252,55 @@ export class Mixer {
     }
   }
 
+  /**
+   * Carga el corrector de tono. Sin él, cambiar la velocidad también cambia
+   * el tono (como un tocadiscos). Devuelve si quedó disponible.
+   */
+  async enablePitchCorrection(): Promise<boolean> {
+    if (this.stretch) return true;
+    try {
+      const { SoundTouchNode } = await import("@soundtouchjs/audio-worklet");
+      await SoundTouchNode.register(this.ctx, PROCESSOR_URL);
+      this.stretch = new SoundTouchNode({ context: this.ctx });
+      this.stretch.connect(this.ctx.destination);
+      this.route();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Cambia la velocidad sin cortar el sonido: todas las fuentes cambian su
+   * `playbackRate` en el mismo instante del reloj, así que siguen en fase.
+   */
+  setSpeed(value: number): void {
+    const rate = Math.max(SPEED_MIN, Math.min(value, SPEED_MAX));
+    if (rate === this.rate) return;
+
+    const at = this.ctx.currentTime + LOOKAHEAD;
+    if (this.isPlaying) {
+      // La posición se reancla en el instante del cambio: lo sonado hasta ahí
+      // fue a la velocidad vieja, lo que viene va a la nueva.
+      this.position = this.timeAt(at);
+      this.contextStart = at;
+      for (const source of this.sources) source.playbackRate.setValueAtTime(rate, at);
+    }
+    this.rate = rate;
+    this.stretch?.playbackRate.setValueAtTime(rate, at);
+    this.route();
+  }
+
+  /**
+   * A velocidad 1 la mezcla va directa a la salida, como siempre; SoundTouch
+   * solo entra cuando hace falta corregir el tono. Así a velocidad normal no
+   * hay ni el retardo ni el procesado del corrector.
+   */
+  private route(): void {
+    this.master.disconnect();
+    this.master.connect(this.stretch && this.rate !== 1 ? this.stretch : this.ctx.destination);
+  }
+
   setVolume(name: string, value: number): void {
     const track = this.tracks.get(name);
     if (!track) return;
@@ -313,6 +400,7 @@ export class Mixer {
     for (const track of this.tracks.values()) {
       const source = this.ctx.createBufferSource();
       source.buffer = track.buffer;
+      source.playbackRate.value = this.rate;
       source.connect(track.gain);
 
       if (this.currentLoop) {
@@ -357,6 +445,9 @@ export class Mixer {
   /**
    * Renderiza offline la mezcla actual (respetando solo/mute/volume) a un
    * Blob WAV de 16 bits. Devuelve `null` si no hay pistas cargadas.
+   *
+   * Siempre a velocidad original: la velocidad es una ayuda para practicar,
+   * no parte de la mezcla.
    *
    * No toca el contexto de reproducción: usa un OfflineAudioContext aparte.
    */

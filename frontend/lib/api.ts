@@ -9,7 +9,8 @@
 
 import type { components } from "@shared/types";
 
-export type Job = components["schemas"]["JobOut"];
+export type Project = components["schemas"]["ProjectOut"];
+export type ProjectSummary = components["schemas"]["ProjectSummary"];
 export type Chord = components["schemas"]["ChordOut"];
 export type Health = components["schemas"]["HealthOut"];
 export type Status = components["schemas"]["Status"];
@@ -94,7 +95,12 @@ export interface AnalysisOptions {
   largeVocabulary?: boolean;
 }
 
-export function uploadAudio(file: File, options: AnalysisOptions = {}): Promise<Job> {
+export function listProjects(): Promise<ProjectSummary[]> {
+  return request<ProjectSummary[]>("/projects");
+}
+
+/** Sube un audio y crea el proyecto; el análisis sigue en segundo plano. */
+export function createProject(file: File, options: AnalysisOptions = {}): Promise<Project> {
   const body = new FormData();
   body.append("file", file);
 
@@ -104,44 +110,21 @@ export function uploadAudio(file: File, options: AnalysisOptions = {}): Promise<
   if (options.largeVocabulary === false) params.set("large_vocabulary", "false");
   const query = params.toString();
 
-  return request<Job>(`/jobs${query ? `?${query}` : ""}`, { method: "POST", body });
+  return request<Project>(`/projects${query ? `?${query}` : ""}`, { method: "POST", body });
 }
 
-export function getJob(id: string): Promise<Job> {
-  return request<Job>(`/jobs/${id}`);
+export function getProject(id: string): Promise<Project> {
+  return request<Project>(`/projects/${id}`);
 }
 
-export function deleteJob(id: string): Promise<void> {
-  return request<void>(`/jobs/${id}`, { method: "DELETE" });
+/** Si se estaba analizando, el backend termina y lo descarta sin guardarlo. */
+export function deleteProject(id: string): Promise<void> {
+  return request<void>(`/projects/${id}`, { method: "DELETE" });
 }
 
-/**
- * Sondea hasta que el trabajo termina. El backend no empuja estado todavía;
- * si el sondeo se queda corto, el siguiente paso es SSE sobre el mismo /jobs.
- */
-export async function waitForJob(
-  id: string,
-  onUpdate?: (job: Job) => void,
-  intervalMs = 500,
-  signal?: AbortSignal,
-): Promise<Job> {
-  for (;;) {
-    if (signal?.aborted) throw new DOMException("Cancelado", "AbortError");
-
-    const job = await getJob(id);
-    onUpdate?.(job);
-
-    if (job.status === "done") return job;
-    if (job.status === "error") {
-      throw new ApiError(500, job.error ?? "El análisis falló");
-    }
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
-  }
-}
-
-export async function downloadStem(jobId: string, stem: string): Promise<ArrayBuffer> {
+export async function downloadStem(projectId: string, stem: string): Promise<ArrayBuffer> {
   const { api, token } = getConfig();
-  const response = await fetch(`${api}/jobs/${jobId}/stems/${stem}`, {
+  const response = await fetch(`${api}/projects/${projectId}/stems/${stem}`, {
     headers: { "X-Mewsplit-Token": token },
   });
   if (!response.ok) {
@@ -157,7 +140,7 @@ export async function downloadStem(jobId: string, stem: string): Promise<ArrayBu
  * un `<audio src>` no la manda. Quien la crea es responsable de liberarla
  * con `URL.revokeObjectURL`.
  */
-export async function getStemUrl(jobId: string, stem: string): Promise<string> {
-  const data = await downloadStem(jobId, stem);
-  return URL.createObjectURL(new Blob([data], { type: "audio/wav" }));
+export async function getStemUrl(projectId: string, stem: string): Promise<string> {
+  const data = await downloadStem(projectId, stem);
+  return URL.createObjectURL(new Blob([data], { type: "audio/flac" }));
 }

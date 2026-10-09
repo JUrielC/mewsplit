@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
-import { downloadStem, type Job } from "@/lib/api";
+import { downloadStem, type Project } from "@/lib/api";
 import { Mixer, peaks as computePeaks, type TrackState } from "@/lib/audio";
 import { simplifyChords, type ChordDetail } from "@/lib/chords";
 import { useTransportKeys } from "@/lib/useTransportKeys";
@@ -36,7 +36,7 @@ const DETAIL_KEY = "mewsplit.chordDetail";
 const ORDER = ["vocals", "bass", "drums", "guitar", "other", "piano"];
 
 interface Props {
-  job: Job;
+  job: Project;
 }
 
 export function Studio({ job }: Props) {
@@ -48,6 +48,9 @@ export function Studio({ job }: Props) {
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
+  // Por proyecto: cada uno arranca a velocidad normal (Studio se monta por proyecto).
+  const [speed, setSpeed] = useState(1);
+  const [keepsPitch, setKeepsPitch] = useState(true);
   const [detail, setDetail] = useState<ChordDetail>(readDetail);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,6 +58,10 @@ export function Studio({ job }: Props) {
     const mixer = new Mixer();
     mixerRef.current = mixer;
     let alive = true;
+
+    // En paralelo con la carga de stems: el corrector de tono solo hace falta
+    // cuando se cambia la velocidad.
+    void mixer.enablePitchCorrection().then((ok) => alive && setKeepsPitch(ok));
 
     (async () => {
       try {
@@ -255,6 +262,14 @@ export function Studio({ job }: Props) {
         duration={duration}
         currentChord={currentChord}
         onToggle={() => withMixer((m) => void m.toggle())}
+        speed={speed}
+        keepsPitch={keepsPitch}
+        onSpeed={(value) =>
+          withMixer((m) => {
+            m.setSpeed(value);
+            setSpeed(m.speed);
+          })
+        }
       />
     </div>
   );
@@ -286,7 +301,7 @@ function buildWaveforms(mixer: Mixer, names: string[]): Record<string, Float32Ar
 }
 
 /** Nombre del archivo descargado: "título - pistas que suenan", o "full mix" si suenan todas. */
-function saveName(job: Job, audible: string[]): string {
+function saveName(job: Project, audible: string[]): string {
   const base = job.filename?.replace(/\.[^.]+$/, "") ?? job.id;
   if (audible.length === 0) return `${base} - full mix`;
   return `${base} - ${audible.join("+")}`;

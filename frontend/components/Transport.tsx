@@ -2,6 +2,7 @@
 
 import { formatChord } from "@/lib/chords";
 
+import { SpeedControl } from "./SpeedControl";
 import styles from "./studio.module.css";
 
 interface Props {
@@ -10,6 +11,9 @@ interface Props {
   duration: number;
   currentChord: string | null;
   onToggle: () => void;
+  speed: number;
+  keepsPitch: boolean;
+  onSpeed: (speed: number) => void;
 }
 
 export function formatTime(seconds: number): string {
@@ -19,7 +23,16 @@ export function formatTime(seconds: number): string {
   return `${String(minutes).padStart(2, "0")}:${rest.toFixed(1).padStart(4, "0")}`;
 }
 
-export function Transport({ playing, time, duration, currentChord, onToggle }: Props) {
+export function Transport({
+  playing,
+  time,
+  duration,
+  currentChord,
+  onToggle,
+  speed,
+  keepsPitch,
+  onSpeed,
+}: Props) {
   return (
     <div className={styles.transport}>
       <button
@@ -38,6 +51,8 @@ export function Transport({ playing, time, duration, currentChord, onToggle }: P
       <span className={`data ${currentChord && currentChord !== "N" ? "active" : ""}`}>
         {currentChord && currentChord !== "N" ? formatChord(currentChord) : "—"}
       </span>
+
+      <SpeedControl speed={speed} keepsPitch={keepsPitch} onSpeed={onSpeed} />
 
       <span className={styles.hint}>espacio · ←→ 1s · ⇧←→ 5s · 0-9 saltar</span>
     </div>

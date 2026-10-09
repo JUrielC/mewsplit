@@ -21,6 +21,8 @@ desktop/src-tauri/gen/
 backend/mewsplit/web/
 backend/mewsplit/bin/
 backend/LICENSE
+# Procesador de SoundTouch: lo copia scripts/copy-worklet.mjs desde node_modules
+frontend/public/soundtouch-processor.js
 
 # Salidas del pipeline
 output/
