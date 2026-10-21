@@ -16,7 +16,8 @@ import shutil
 import tempfile
 import threading
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
@@ -25,7 +26,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from mewsplit.core import DEFAULT_MODEL, SIX_STEM_MODEL, Analysis, Chord, analyze, get_device
+from mewsplit import projects
+from mewsplit.core import DEFAULT_MODEL, SIX_STEM_MODEL, Chord, analyze, get_device
+from mewsplit.projects import Project
 
 
 def load_env_file(path: Path) -> dict[str, str]:
@@ -96,28 +99,38 @@ class ChordOut(BaseModel):
     chord: str
 
 
-class JobOut(BaseModel):
+class ProjectSummary(BaseModel):
+    """Lo que necesita la lista de proyectos: sin acordes ni stems."""
+
+    id: str
+    name: str
+    status: Status
+    created_at: str
+    # Avance de la separación, no del trabajo entero: los acordes terminan en
+    # ~2s y marcarlos aquí dejaría la barra al 100% durante toda la separación.
+    progress: float = 0.0
+    error: str | None = None
+    duration: float | None = None
+    model: str | None = None
+    size_bytes: int = 0
+
+
+class ProjectOut(ProjectSummary):
     """
     Espejo tipado de `core.Analysis` para que OpenAPI (y por tanto
     `shared/types.ts`) tenga un contrato explícito. La duplicación es
     deliberada: mantiene a `core` libre de dependencias de transporte.
     """
 
-    id: str
-    status: Status
     filename: str
-    # Avance de la separación, no del trabajo entero: los acordes terminan en
-    # ~2s y marcarlos aquí dejaría la barra al 100% durante toda la separación.
-    progress: float = 0.0
     # Los acordes se pueden pintar mucho antes de que existan los stems.
     chords_ready: bool = False
-    error: str | None = None
     device: str | None = None
-    model: str | None = None
-    duration: float | None = None
     stems: dict[str, str] = {}
-    instrumental: str | None = None
     chords: list[ChordOut] = []
+    # Desvío de la grabación respecto a La 440, en cents: la interfaz avisa
+    # cuando es grande, porque tocar encima exige afinar el instrumento a ella.
+    tuning_cents: float | None = None
     timings: dict[str, float] = {}
 
 
@@ -130,24 +143,40 @@ class HealthOut(BaseModel):
 
 @dataclass
 class Job:
-    id: str
-    filename: str
-    input_path: Path
-    output_dir: Path
-    status: Status = Status.QUEUED
+    """Un proyecto más lo que solo existe mientras el proceso vive (el avance)."""
+
+    project: Project
     progress: float = 0.0
-    error: str | None = None
     # Se llenan en cuanto la rama de acordes termina, sin esperar a los stems.
-    chords: list[Chord] = field(default_factory=list)
     chords_ready: bool = False
-    analysis: Analysis | None = None
-    paths: dict[str, Path] = field(default_factory=dict)
+    # Eliminado mientras se analizaba: el análisis termina y se descarta.
+    deleted: bool = False
 
 
-# En memoria a propósito: en escritorio el proceso muere con la app. Si el
-# despliegue web pasa a varios workers, esto necesita almacenamiento externo.
+# Los proyectos terminados viven en disco (projects.py); este registro añade el
+# estado vivo de los que se están analizando. Se carga la primera vez que hace
+# falta y no al importar: así las pruebas pueden apuntar PROJECTS_DIR a otro lado.
 _jobs: dict[str, Job] = {}
+_loaded = False
 _lock = threading.Lock()
+
+# Un análisis a la vez. Dos separaciones simultáneas sobre la GPU (MPS) desde
+# hilos distintos chocan dentro de Metal (`failed assertion _status <
+# MTLCommandBufferStatusCommitted`) y macOS mata el proceso entero: subir
+# varias canciones seguidas tumbaba el servidor. Las demás esperan en "queued";
+# repartir la GPU entre varias tampoco sería más rápido.
+_analysis_slot = threading.Lock()
+
+
+def _registry() -> dict[str, Job]:
+    global _loaded
+    with _lock:
+        if not _loaded:
+            for project in projects.load_all():
+                _jobs.setdefault(project.id, Job(project=project, progress=1.0))
+            _loaded = True
+    return _jobs
+
 
 app = FastAPI(title="mewsplit", version="0.1.2")
 
@@ -161,9 +190,9 @@ app.add_middleware(
 
 
 def busy() -> bool:
-    """¿Hay algún trabajo en cola o en proceso? Para no apagar a mitad de un análisis."""
+    """¿Hay algún análisis en cola o en proceso? Para no apagar a mitad de uno."""
     with _lock:
-        return any(job.status in (Status.QUEUED, Status.PROCESSING) for job in _jobs.values())
+        return any(job.project.status in projects.UNFINISHED for job in _jobs.values())
 
 
 def verify_token(x_mewsplit_token: str | None = Header(default=None)) -> None:
@@ -171,55 +200,78 @@ def verify_token(x_mewsplit_token: str | None = Header(default=None)) -> None:
         raise HTTPException(status_code=401, detail="Token inválido o ausente")
 
 
-def _get_job(job_id: str) -> Job:
-    with _lock:
-        job = _jobs.get(job_id)
+def _get_job(project_id: str) -> Job:
+    job = _registry().get(project_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="Trabajo no encontrado")
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
     return job
 
 
-def _serialize(job: Job) -> JobOut:
-    out = JobOut(
-        id=job.id,
-        status=job.status,
-        filename=job.filename,
+def _summary(job: Job) -> ProjectSummary:
+    project = job.project
+    return ProjectSummary(
+        id=project.id,
+        name=project.name,
+        status=Status(project.status),
+        created_at=project.created_at,
         progress=job.progress,
-        chords_ready=job.chords_ready,
-        error=job.error,
-        # Salen del trabajo, no del análisis: así viajan en cuanto están listos
-        # aunque la separación siga corriendo.
-        chords=[ChordOut(start=c.start, end=c.end, chord=c.chord) for c in job.chords],
+        error=project.error,
+        duration=project.duration,
+        model=project.model,
+        size_bytes=projects.size_bytes(project.id) if project.status == "done" else 0,
     )
-    if job.analysis is None:
-        return out
-
-    analysis = job.analysis
-    out.device = analysis.device
-    out.model = analysis.model
-    out.duration = analysis.duration
-    out.instrumental = "instrumental" if analysis.instrumental else None
-    out.timings = analysis.timings
-    # El cliente recibe nombres de stem, no rutas del disco del servidor.
-    out.stems = {name: name for name in job.paths}
-    return out
 
 
-def _process(job_id: str, model: str, with_chords: bool, large_vocabulary: bool) -> None:
-    job = _jobs[job_id]
-    job.status = Status.PROCESSING
+def _serialize(job: Job) -> ProjectOut:
+    project = job.project
+    return ProjectOut(
+        **_summary(job).model_dump(),
+        filename=project.filename,
+        chords_ready=job.chords_ready or project.status == "done",
+        device=project.device,
+        # El cliente recibe nombres de stem, no rutas del disco del servidor.
+        stems={name: name for name in project.stems},
+        chords=[ChordOut(start=c.start, end=c.end, chord=c.chord) for c in project.chords],
+        tuning_cents=project.tuning_cents,
+        timings=project.timings,
+    )
+
+
+def _process(job: Job, model: str, with_chords: bool, large_vocabulary: bool) -> None:
+    # Recibe el Job y no el id: si lo eliminan antes de que arranque, ya no
+    # está en el registro, pero el análisis sigue necesitando saber que se borró.
+    project = job.project
+    project_id = project.id
+
+    with _analysis_slot:
+        if job.deleted:
+            # Se eliminó mientras esperaba su turno: ni siquiera se analiza.
+            projects.delete(project_id)
+            return
+        _analyze(job, model, with_chords, large_vocabulary)
+
+
+def _analyze(job: Job, model: str, with_chords: bool, large_vocabulary: bool) -> None:
+    project = job.project
+    project_id = project.id
+    project.status = Status.PROCESSING.value
+    projects.save(project)
+
+    # La separación escribe WAV en una carpeta de trabajo; al proyecto solo
+    # llegan los FLAC. Así un análisis a medias no deja basura en el proyecto.
+    work = JOBS_DIR / project_id
 
     def on_progress(progress: float) -> None:
         job.progress = progress
 
     def on_chords(chords: list[Chord]) -> None:
-        job.chords = chords
+        project.chords = chords
         job.chords_ready = True
 
     try:
         analysis = analyze(
-            job.input_path,
-            job.output_dir,
+            projects.original_path(project),
+            work / "stems",
             model=model,
             with_chords=with_chords,
             large_vocabulary=large_vocabulary,
@@ -228,18 +280,29 @@ def _process(job_id: str, model: str, with_chords: bool, large_vocabulary: bool)
             on_progress=on_progress,
             on_chords=on_chords,
         )
-        paths = {name: Path(path) for name, path in analysis.stems.items()}
-        if analysis.instrumental:
-            paths["instrumental"] = Path(analysis.instrumental)
-
-        job.analysis = analysis
-        job.paths = paths
-        job.chords = analysis.chords
-        job.status = Status.DONE
-        job.progress = 1.0
+        if not job.deleted:
+            # Sin el instrumental: la interfaz no lo usa y costaría otro stem en disco.
+            project.stems = projects.store_stems(
+                project_id, {name: Path(path) for name, path in analysis.stems.items()}
+            )
+            project.model = analysis.model
+            project.device = analysis.device
+            project.duration = analysis.duration
+            project.chords = analysis.chords
+            project.tuning_cents = analysis.tuning_cents
+            project.timings = analysis.timings
+            project.status = Status.DONE.value
+            job.progress = 1.0
     except Exception as e:
-        job.status = Status.ERROR
-        job.error = str(e)
+        project.status = Status.ERROR.value
+        project.error = str(e)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+    if job.deleted:
+        projects.delete(project_id)
+    else:
+        projects.save(project)
 
 
 @app.get("/health", response_model=HealthOut)
@@ -253,59 +316,71 @@ def health() -> HealthOut:
     )
 
 
-@app.post("/jobs", response_model=JobOut, status_code=202, dependencies=[Depends(verify_token)])
-async def create_job(
+@app.get("/projects", response_model=list[ProjectSummary], dependencies=[Depends(verify_token)])
+def list_projects() -> list[ProjectSummary]:
+    jobs = sorted(_registry().values(), key=lambda j: j.project.created_at, reverse=True)
+    return [_summary(job) for job in jobs]
+
+
+@app.post(
+    "/projects", response_model=ProjectOut, status_code=202, dependencies=[Depends(verify_token)]
+)
+async def create_project(
     tasks: BackgroundTasks,
     file: UploadFile = File(...),
     model: str = DEFAULT_MODEL,
     with_chords: bool = True,
     large_vocabulary: bool = True,
-) -> JobOut:
+) -> ProjectOut:
     filename = Path(file.filename or "audio").name
     if Path(filename).suffix.lower() not in EXTENSIONS:
         raise HTTPException(status_code=415, detail=f"Formato no soportado: {filename}")
 
-    job_id = uuid.uuid4().hex
-    directory = JOBS_DIR / job_id
-    directory.mkdir(parents=True, exist_ok=True)
-    input_path = directory / filename
-
-    with input_path.open("wb") as target:
-        shutil.copyfileobj(file.file, target)
-
-    job = Job(
-        id=job_id,
+    project = Project(
+        id=uuid.uuid4().hex,
+        name=Path(filename).stem,
         filename=filename,
-        input_path=input_path,
-        output_dir=directory / "stems",
+        created_at=datetime.now().isoformat(timespec="seconds"),
     )
-    with _lock:
-        _jobs[job_id] = job
+    original = projects.original_path(project)
+    original.parent.mkdir(parents=True, exist_ok=True)
+    with original.open("wb") as target:
+        shutil.copyfileobj(file.file, target)
+    projects.save(project)
 
-    tasks.add_task(_process, job_id, model, with_chords, large_vocabulary)
+    job = Job(project=project)
+    _registry()
+    with _lock:
+        _jobs[project.id] = job
+
+    tasks.add_task(_process, job, model, with_chords, large_vocabulary)
     return _serialize(job)
 
 
-@app.get("/jobs/{job_id}", response_model=JobOut, dependencies=[Depends(verify_token)])
-def read_job(job_id: str) -> JobOut:
-    return _serialize(_get_job(job_id))
+@app.get("/projects/{project_id}", response_model=ProjectOut, dependencies=[Depends(verify_token)])
+def read_project(project_id: str) -> ProjectOut:
+    return _serialize(_get_job(project_id))
 
 
-@app.get("/jobs/{job_id}/stems/{name}", dependencies=[Depends(verify_token)])
-def read_stem(job_id: str, name: str) -> FileResponse:
-    job = _get_job(job_id)
-    path = job.paths.get(name)
-    if path is None or not path.exists():
+@app.get("/projects/{project_id}/stems/{name}", dependencies=[Depends(verify_token)])
+def read_stem(project_id: str, name: str) -> FileResponse:
+    job = _get_job(project_id)
+    path = projects.stem_path(project_id, name)
+    if name not in job.project.stems or not path.exists():
         raise HTTPException(status_code=404, detail=f"Stem no disponible: {name}")
-    return FileResponse(path, media_type="audio/wav", filename=f"{name}.wav")
+    return FileResponse(path, media_type="audio/flac", filename=f"{name}.flac")
 
 
-@app.delete("/jobs/{job_id}", status_code=204, dependencies=[Depends(verify_token)])
-def delete_job(job_id: str) -> None:
-    job = _get_job(job_id)
-    shutil.rmtree(job.input_path.parent, ignore_errors=True)
+@app.delete("/projects/{project_id}", status_code=204, dependencies=[Depends(verify_token)])
+def delete_project(project_id: str) -> None:
+    job = _get_job(project_id)
     with _lock:
-        _jobs.pop(job_id, None)
+        _jobs.pop(project_id, None)
+    if job.project.status in projects.UNFINISHED:
+        # La separación no se puede cortar a mitad: termina y _process lo borra.
+        job.deleted = True
+    else:
+        projects.delete(project_id)
 
 
 def run(host: str = "127.0.0.1", port: int | None = None) -> None:

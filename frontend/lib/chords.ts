@@ -1,7 +1,8 @@
 /**
  * Notación Harte ("G:min") al cifrado de siempre ("Gm").
  *
- * La tabla cubre las 14 calidades que puede devolver el modelo; lo que no
+ * La tabla cubre las 14 calidades que puede devolver el modelo y la que
+ * añade el repaso con los stems; lo que no
  * esté en ella sale crudo a propósito, en vez de inventarle una notación que
  * luego haya que deshacer. Todo en ASCII: "b" y no "♭", "dim" y no "°", para
  * no depender de que la fuente de datos tenga esos glifos.
@@ -23,9 +24,36 @@ const SUFFIXES: Record<string, string> = {
   hdim7: "m7b5",
   sus2: "sus2",
   sus4: "sus4",
+  // No sale del modelo sino del repaso con los stems (refine_with_stems).
+  "(1,#5)": "(#5)",
 };
 
+/** Sin tercera: no es ni mayor ni menor, así que el modo simple no lo toca. */
+const NO_THIRD = new Set(["(1,#5)"]);
+
+/** Notas en el mismo orden y con los mismos nombres que ROOTS en chords.py. */
+const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+/** Los grados del bajo que puede añadir el backend (BASS_DEGREES), en semitonos. */
+const BASS_INTERVALS: Record<string, number> = { b3: 3, "3": 4, "5": 7 };
+
+/** "A#/3" → ["A#", "D"]: Harte da el bajo como grado, el músico lo lee como nota. */
+function splitBass(chord: string): [string, string | null] {
+  const slash = chord.indexOf("/");
+  if (slash === -1) return [chord, null];
+  const base = chord.slice(0, slash);
+  const root = NOTES.indexOf(base.split(":")[0]);
+  const interval = BASS_INTERVALS[chord.slice(slash + 1)];
+  if (root === -1 || interval === undefined) return [chord, null];
+  return [base, NOTES[(root + interval) % 12]];
+}
+
 export function formatChord(chord: string): string {
+  const [base, bass] = splitBass(chord);
+  return formatBase(base) + (bass ? `/${bass}` : "");
+}
+
+function formatBase(chord: string): string {
   const separator = chord.indexOf(":");
   if (separator === -1) return chord;
 
@@ -45,13 +73,21 @@ export type ChordDetail = "simple" | "full";
  */
 const MINOR_THIRD = new Set(["min", "dim", "min6", "min7", "minmaj7", "dim7", "hdim7"]);
 
-/** "G:7" → "G", "A:hdim7" → "A:min". Raíz y tercera; lo demás se descarta. */
+/**
+ * "G:7" → "G", "A:hdim7" → "A:min". Raíz y tercera; lo demás se descarta,
+ * salvo el bajo: "A#/3" sigue siendo A#/D, que es lo que se toca.
+ */
 export function toTriad(chord: string): string {
+  const slash = chord.indexOf("/");
+  if (slash !== -1) return toTriad(chord.slice(0, slash)) + chord.slice(slash);
+
   const separator = chord.indexOf(":");
   if (separator === -1) return chord;
 
   const root = chord.slice(0, separator);
-  return MINOR_THIRD.has(chord.slice(separator + 1)) ? `${root}:min` : root;
+  const quality = chord.slice(separator + 1);
+  if (NO_THIRD.has(quality)) return chord;
+  return MINOR_THIRD.has(quality) ? `${root}:min` : root;
 }
 
 interface Segment {

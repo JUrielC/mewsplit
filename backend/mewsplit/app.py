@@ -91,7 +91,7 @@ def build_app(token: str, web_dir: Path = WEB_DIR):
     async def dispatch(scope, receive, send):
         _touch()
         # Lo que exista como archivo de la interfaz se sirve estático; todo lo
-        # demás (/health, /jobs, /docs…) es la API.
+        # demás (/health, /projects, /docs…) es la API.
         target = (web_dir / scope["path"].lstrip("/")).resolve()
         if target.is_file() and target.is_relative_to(web_dir):
             await static(scope, receive, send)

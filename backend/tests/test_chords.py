@@ -4,10 +4,13 @@ import numpy as np
 import pytest
 
 from mewsplit.chords import (
+    CHROMA_HOP,
     FAMILIES,
     FAMILY_N,
     FRAME_SECONDS,
     QUALITIES,
+    ROOTS,
+    SAMPLE_RATE,
     _load,
     assign_quality,
     beat_pool,
@@ -15,11 +18,14 @@ from mewsplit.chords import (
     condense,
     family_label,
     family_of,
+    most_confident,
     path_to_segments,
+    refine_with_stems,
+    sharp_fifth_root,
+    with_bass,
     simple_label,
     smooth,
     to_families,
-    tuning_to_apply,
 )
 
 SEGMENTS = [
@@ -166,13 +172,89 @@ def test_beat_pool_averages_frames_within_each_beat():
     assert pooled.argmax(1).tolist() == [0, 1, 2]
 
 
-def test_small_detuning_is_left_alone():
-    """Estimar la afinación no es exacto: corregir unos cents de más solo mete ruido."""
-    assert tuning_to_apply(0.05) == 0.0
-    assert tuning_to_apply(-0.19) == 0.0
+def test_the_most_confident_tuning_wins():
+    """Entre afinaciones candidatas, la que deja al modelo más seguro de sus acordes."""
+    doubtful = np.vstack([_large(C_maj=0.5, A_min=0.5)] * 4)
+    clear = np.vstack([_large(C_maj=0.9, A_min=0.1)] * 4)
+
+    assert most_confident({0.0: doubtful, 0.43: clear}) == 0.43
+    assert most_confident({0.0: clear, 0.43: doubtful}) == 0.0
 
 
-def test_real_detuning_is_compensated():
-    """Nirvana, +43 cents: sin compensar, cada nota cae entre dos casillas del CQT."""
-    assert tuning_to_apply(0.43) == 0.43
-    assert tuning_to_apply(-0.3) == -0.3
+
+def _profile(**notes: float) -> np.ndarray:
+    """Perfil de 12 notas; sostenidos con "s" ("As" es La#)."""
+    profile = np.full(12, 0.15)  # el piso de ruido de un cromagrama real
+    for name, value in notes.items():
+        profile[ROOTS.index(name.replace("s", "#"))] = value
+    return profile
+
+
+def test_major_with_its_third_in_front_and_no_fifth_is_a_sharp_fifth_candidate():
+    """A#–D sin F: el D(#5) de paso de "Hold me baby", que BTC leía como A#."""
+    assert sharp_fifth_root("A#", _profile(D=1.0, As=0.6, F=0.25)) == ROOTS.index("D")
+
+
+def test_a_major_with_its_fifth_is_not_a_candidate():
+    assert sharp_fifth_root("A#", _profile(D=1.0, As=0.6, F=0.45)) is None
+    assert sharp_fifth_root("A#", _profile(As=1.0, D=0.3, F=0.5)) is None
+    assert sharp_fifth_root("A#:7", _profile(D=1.0, As=0.6)) is None
+
+
+def _chroma(*profiles: np.ndarray, seconds: int = 1) -> np.ndarray:
+    """Un perfil por segundo, en frames del cromagrama."""
+    frames = round(seconds * SAMPLE_RATE / CHROMA_HOP)
+    return np.hstack([np.tile(p[:, None], (1, frames)) for p in profiles])
+
+
+def _segments(*chords: str) -> list[dict]:
+    return [{"start": float(i), "end": float(i + 1), "chord": c} for i, c in enumerate(chords)]
+
+
+def test_a_passing_chord_in_a_chromatic_line_becomes_a_sharp_fifth():
+    passing = _profile(D=1.0, As=0.6, F=0.2)
+    chroma = _chroma(_profile(Ds=1.0, As=0.5), passing, _profile(Cs=1.0, Gs=0.5))
+    refined = refine_with_stems(_segments("D#", "A#", "C#"), chroma)
+    assert [s["chord"] for s in refined] == ["D#", "D:(1,#5)", "C#"]
+
+
+def test_the_same_notes_outside_a_chromatic_line_stay_a_first_inversion():
+    """A#/D entre F y D#: son las mismas notas, pero ahí no es un acorde de paso."""
+    passing = _profile(D=1.0, As=0.6, F=0.2)
+    chroma = _chroma(_profile(F=1.0, C=0.5), passing, _profile(Ds=1.0, As=0.5))
+    refined = refine_with_stems(_segments("F", "A#", "D#"), chroma)
+    assert [s["chord"] for s in refined] == ["F", "A#", "D#"]
+
+
+def test_without_harmonic_stems_nothing_changes():
+    segments = _segments("D#", "A#", "C#")
+    assert refine_with_stems(segments, None) == segments
+
+
+def _bass(*notes: str, silent: int = 0) -> np.ndarray:
+    return np.array([ROOTS.index(n) for n in notes] + [-1] * silent)
+
+
+def test_a_steady_third_or_fifth_in_the_bass_is_shown():
+    assert with_bass("A#", _bass(*["D"] * 8)) == "A#/3"
+    assert with_bass("C:min", _bass(*["D#"] * 8)) == "C:min/b3"
+    assert with_bass("G:7", _bass(*["D"] * 8)) == "G:7/5"
+
+
+def test_the_root_in_the_bass_is_not_an_inversion():
+    assert with_bass("A#", _bass(*["A#"] * 8)) == "A#"
+
+
+def test_a_bass_that_moves_around_is_not_shown():
+    """Un bajo caminante pasa por la tercera sin que el acorde esté invertido."""
+    assert with_bass("A#", _bass("D", "D", "D", "D", "A#", "F", "C", "A#")) == "A#"
+
+
+def test_a_bass_outside_the_chord_is_not_shown():
+    """Solo tercera o quinta: un bajo en la segunda sería más fácil que esté mal."""
+    assert with_bass("C", _bass(*["D"] * 8)) == "C"
+
+
+def test_silence_in_the_bass_does_not_count_against_it():
+    assert with_bass("A#", _bass(*["D"] * 4, silent=20)) == "A#/3"
+    assert with_bass("A#", _bass(silent=8)) == "A#"

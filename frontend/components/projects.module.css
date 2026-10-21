@@ -1,0 +1,182 @@
+/* La ventana: panel de proyectos a la izquierda y el estudio al resto del
+   ancho. En una herramienta multipista el ancho es resolución temporal. */
+.app {
+  display: flex;
+  height: 100vh;
+  width: 100%;
+}
+
+.app :global(.workspace) {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Panel de proyectos. Mismas reglas que el estudio: sin cajas ni sombras,
+   la separación son líneas de 0.5px y la jerarquía sale del espaciado. */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--step) * 2);
+  width: 220px;
+  flex-shrink: 0;
+  height: 100vh;
+  padding: calc(var(--step) * 2) calc(var(--step) * 2);
+  border-right: 0.5px solid var(--line);
+  overflow: hidden;
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: var(--step);
+  border-bottom: 0.5px solid var(--line);
+}
+
+.stems {
+  display: flex;
+  gap: calc(var(--step) * 2);
+}
+
+.stems button {
+  color: var(--text-dim);
+}
+
+.stems .on {
+  color: var(--text);
+}
+
+.list {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--step);
+  padding: var(--step) 0;
+  border-bottom: 0.5px solid var(--line-faint);
+}
+
+.open {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  text-align: left;
+  color: var(--text-soft);
+}
+
+.selected .open {
+  color: var(--text);
+}
+
+.name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+
+.open :global(.data) {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+/* La × solo aparece al pasar por la fila: una lista llena de cruces invita
+   a borrar por accidente. */
+.remove {
+  opacity: 0;
+  color: var(--text-dim);
+}
+
+.item:hover .remove,
+.remove:focus-visible {
+  opacity: 1;
+}
+
+.confirm {
+  display: flex;
+  gap: var(--step);
+  white-space: nowrap;
+}
+
+.toggle {
+  align-self: flex-start;
+  color: var(--text-dim);
+}
+
+/* Proyecto que se está analizando o que falló: el lugar del estudio. */
+.status {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--step) * 2);
+}
+
+.progressTrack {
+  width: 260px;
+  height: 2px;
+  background: var(--line);
+}
+
+.progressFill {
+  height: 100%;
+  width: var(--progress-width, 0%);
+  background: var(--accent);
+  transition: width 300ms linear;
+}
+
+/* Aviso al arrastrar un audio sobre la ventana. Sin caja: un velo y texto. */
+.dropHint {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(16, 17, 20, 0.85);
+  color: var(--text);
+  font-size: 12px;
+  letter-spacing: var(--tracking);
+  text-transform: lowercase;
+  pointer-events: none;
+}
+
+/* Aviso de afinación. En el color de texto normal y no en el acento, que ya
+   usa el acorde que está sonando. Primero a todo el ancho; una vez
+   descartado queda la referencia corta en la cabecera. */
+.tuningBanner {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--step) * 3);
+  padding-bottom: calc(var(--step) * 2);
+  border-bottom: 0.5px solid var(--line);
+}
+
+.tuningHeadline {
+  flex-shrink: 0;
+  font-size: 13px;
+  letter-spacing: var(--tracking);
+  color: var(--text);
+}
+
+.tuningDismiss {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.tuningNotice {
+  color: var(--text);
+  margin-left: auto;
+  margin-right: calc(var(--step) * 3);
+}

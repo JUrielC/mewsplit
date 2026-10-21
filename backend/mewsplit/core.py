@@ -20,7 +20,7 @@ from pathlib import Path
 import soundfile as sf
 import torch
 
-from mewsplit.chords import detect_chords
+from mewsplit.chords import analyze_chords, bass_notes, harmonic_chroma, refine_with_stems
 from mewsplit.separation import (
     DEFAULT_MODEL,
     SIX_STEM_MODEL,
@@ -55,6 +55,8 @@ class Analysis:
     stems: dict[str, str] = field(default_factory=dict)
     instrumental: str | None = None
     chords: list[Chord] = field(default_factory=list)
+    # Desvío de la grabación respecto a La 440, en cents. None sin acordes.
+    tuning_cents: float | None = None
     timings: dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -116,8 +118,10 @@ def analyze(
 
     Separación y acordes corren **en paralelo**: está medido que detectar
     acordes sobre el instrumental no mejora la precisión (20 de 22 tramos
-    idénticos), así que los acordes no esperan a los stems. El instrumental
-    se sigue generando porque es una salida útil por sí misma.
+    idénticos), así que los acordes no esperan a los stems. Cuando los stems
+    existen, un repaso ve en ellos lo que BTC no tiene en su vocabulario
+    (la quinta aumentada de paso, la nota del bajo) y corrige esas etiquetas. El
+    instrumental se sigue generando porque es una salida útil por sí misma.
 
     `on_progress(avance: float)` informa SOLO de la separación, que es ~92%
     del tiempo total y por tanto el único avance que significa algo. No
@@ -127,7 +131,8 @@ def analyze(
 
     `on_chords(acordes)` avisa en cuanto la armonía está lista —unos dos
     segundos— para que la capa de transporte pueda publicarla sin esperar a
-    los stems.
+    los stems. Son los de BTC sin el repaso; los definitivos van en el
+    resultado.
     """
     audio_path = Path(audio_path).resolve()
     output_dir = Path(output_dir).resolve()
@@ -159,22 +164,25 @@ def analyze(
         report(1.0)
         return stems
 
-    def run_chords() -> list[Chord]:
+    def run_chords() -> tuple[list[Chord], float | None]:
         if not with_chords:
-            return []
+            return [], None
         # Sobre el audio original, no sobre el instrumental: no espera a los stems.
-        raw = detect_chords(audio_path, large_vocabulary=large_vocabulary, timer=clock)
+        raw, tuning = analyze_chords(audio_path, large_vocabulary=large_vocabulary, timer=clock)
         chords = [Chord(start=c["start"], end=c["end"], chord=c["chord"]) for c in raw]
         if on_chords is not None:
             on_chords(chords)
-        return chords
+        return chords, tuning
 
     with clock.measure("total"):
         with ThreadPoolExecutor(max_workers=2) as pool:
             future_stems = pool.submit(run_separation)
             future_chords = pool.submit(run_chords)
             stems = future_stems.result()
-            chords = future_chords.result()
+            chords, tuning_cents = future_chords.result()
+
+        if chords:
+            chords = refine_chords(chords, stems, tuning_cents, clock)
 
         instrumental_path = build_instrumental(stems, output_dir, timer=clock)
 
@@ -189,5 +197,16 @@ def analyze(
         stems={name: str(path) for name, path in stems.items()},
         instrumental=str(instrumental_path) if instrumental_path else None,
         chords=chords,
+        tuning_cents=tuning_cents,
         timings=clock.timings,
     )
+
+
+def refine_chords(
+    chords: list[Chord], stems: dict[str, Path], tuning_cents: float | None, clock: Stopwatch
+) -> list[Chord]:
+    with clock.measure("refine_chords"):
+        chroma = harmonic_chroma(stems, tuning_cents)
+        bass = bass_notes(stems, tuning_cents)
+        refined = refine_with_stems([asdict(c) for c in chords], chroma, bass)
+    return [Chord(start=c["start"], end=c["end"], chord=c["chord"]) for c in refined]

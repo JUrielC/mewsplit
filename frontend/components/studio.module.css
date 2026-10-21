@@ -301,6 +301,12 @@
   border-top: 0.5px solid var(--line);
 }
 
+/* Velocidad distinta de 100%: en el color de texto normal y no en el acento,
+   que ya usa el acorde que está sonando. */
+.speedChanged {
+  color: var(--text);
+}
+
 /* Pista de atajos: sin ella el teclado es invisible. Al final de la fila y
    en el gris más apagado, para que no compita con los datos. */
 .hint {
@@ -320,9 +326,6 @@
   border: 0.5px dashed var(--line);
 }
 
-.dropZoneActive {
-  border-color: var(--accent);
-}
 
 .progressTrack {
   width: 260px;

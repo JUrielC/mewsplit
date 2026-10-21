@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from mewsplit import core
@@ -71,10 +72,10 @@ def test_analyze_runs_separation_and_chords_in_parallel(tmp_path: Path, tone, mo
 
     def fake_detect_chords(*args, **kwargs):
         barrier.wait()
-        return [{"start": 0.0, "end": 1.0, "chord": "C"}]
+        return [{"start": 0.0, "end": 1.0, "chord": "C"}], 0.0
 
     monkeypatch.setattr(core, "separate", fake_separate)
-    monkeypatch.setattr(core, "detect_chords", fake_detect_chords)
+    monkeypatch.setattr(core, "analyze_chords", fake_detect_chords)
     monkeypatch.setattr(core, "build_instrumental", lambda *a, **k: None)
 
     analysis = core.analyze(source, tmp_path, verbose=False)
@@ -85,7 +86,7 @@ def test_analyze_runs_separation_and_chords_in_parallel(tmp_path: Path, tone, mo
 def test_analyze_reports_progress(tmp_path: Path, tone, monkeypatch):
     source = tone("song.wav")
     monkeypatch.setattr(core, "separate", lambda *a, **k: {"vocals": source})
-    monkeypatch.setattr(core, "detect_chords", lambda *a, **k: [])
+    monkeypatch.setattr(core, "analyze_chords", lambda *a, **k: ([], 0.0))
     monkeypatch.setattr(core, "build_instrumental", lambda *a, **k: None)
 
     seen = []
@@ -113,10 +114,10 @@ def test_chords_branch_never_touches_progress(tmp_path: Path, tone, monkeypatch)
 
     def slow_chords(*args, **kwargs):
         separation_done.wait(timeout=5)
-        return [{"start": 0.0, "end": 1.0, "chord": "C"}]
+        return [{"start": 0.0, "end": 1.0, "chord": "C"}], 0.0
 
     monkeypatch.setattr(core, "separate", fast_separate)
-    monkeypatch.setattr(core, "detect_chords", slow_chords)
+    monkeypatch.setattr(core, "analyze_chords", slow_chords)
     monkeypatch.setattr(core, "build_instrumental", lambda *a, **k: None)
 
     seen: list[float] = []
@@ -135,7 +136,9 @@ def test_chords_are_published_before_separation_finishes(tmp_path: Path, tone, m
         return {"vocals": source}
 
     monkeypatch.setattr(core, "separate", slow_separate)
-    monkeypatch.setattr(core, "detect_chords", lambda *a, **k: [{"start": 0.0, "end": 1.0, "chord": "C"}])
+    monkeypatch.setattr(
+        core, "analyze_chords", lambda *a, **k: ([{"start": 0.0, "end": 1.0, "chord": "C"}], 0.0)
+    )
     monkeypatch.setattr(core, "build_instrumental", lambda *a, **k: None)
 
     received: list[Chord] = []
@@ -158,3 +161,33 @@ def test_analysis_serializes_to_json(tmp_path: Path):
         chords=[Chord(0.0, 1.0, "C")],
     )
     assert analysis.to_dict()["chords"] == [{"start": 0.0, "end": 1.0, "chord": "C"}]
+
+
+
+def test_stems_refine_the_final_chords_but_not_the_early_ones(tmp_path: Path, tone, monkeypatch):
+    """
+    La quinta aumentada de paso solo se ve en los stems armónicos. Los acordes
+    tempranos salen sin el repaso: no esperan a los stems.
+    """
+    source = tone("song.wav")
+    second = 44  # frames del cromagrama por segundo, redondeado hacia arriba
+    chroma = np.full((12, 3 * second), 0.1)
+    chroma[3, :second] = 1.0  # D#
+    chroma[2, second:2 * second], chroma[10, second:2 * second] = 1.0, 0.6  # D y La#, sin Fa
+    chroma[1, 2 * second:] = 1.0  # C#
+    btc = [
+        {"start": 0.0, "end": 1.0, "chord": "D#"},
+        {"start": 1.0, "end": 2.0, "chord": "A#"},
+        {"start": 2.0, "end": 3.0, "chord": "C#"},
+    ]
+
+    monkeypatch.setattr(core, "separate", lambda *a, **k: {"other": source, "vocals": source})
+    monkeypatch.setattr(core, "analyze_chords", lambda *a, **k: (btc, 0.0))
+    monkeypatch.setattr(core, "harmonic_chroma", lambda stems, _: chroma if "other" in stems else None)
+    monkeypatch.setattr(core, "build_instrumental", lambda *a, **k: None)
+
+    early: list[Chord] = []
+    analysis = core.analyze(source, tmp_path, verbose=False, on_chords=early.extend)
+
+    assert [c.chord for c in early] == ["D#", "A#", "C#"]
+    assert [c.chord for c in analysis.chords] == ["D#", "D:(1,#5)", "C#"]
