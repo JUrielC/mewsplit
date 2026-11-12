@@ -1,0 +1,167 @@
+name: Release
+
+# Al subir un tag v<versión>: prueba, compila, prueba la instalación en Windows
+# y publica la release con el wheel, los instaladores y latest.json (el
+# manifiesto que la app consulta para actualizarse; lo sirve site.yml).
+# Lanzado a mano (workflow_dispatch) hace todo menos publicar.
+on:
+  push:
+    tags: ["v[0-9]*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  build:
+    # La ventana nativa se compila con Swift, así que hace falta macOS en Apple Silicon.
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+
+      - name: Verificar versión
+        run: |
+          VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' backend/pyproject.toml)"
+          if ! grep -q "__version__ = \"$VERSION\"" backend/mewsplit/__init__.py \
+            || ! grep -q "version=\"$VERSION\"" backend/mewsplit/api.py \
+            || ! grep -q "\"version\": \"$VERSION\"" frontend/package.json; then
+            echo "::error::La versión $VERSION de backend/pyproject.toml no coincide en __init__.py, api.py y package.json"
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$VERSION" ]; then
+            echo "::error::El tag $GITHUB_REF_NAME no coincide con la versión $VERSION"
+            exit 1
+          fi
+
+      - name: Pruebas del backend
+        working-directory: backend
+        run: uv run --python 3.11 --extra dev pytest -q
+
+      - name: Compilar
+        run: |
+          (cd frontend && npm ci)
+          ./scripts/build-release.sh
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  windows:
+    # La única prueba real en Windows: el desarrollo es en macOS.
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+
+      - name: Pruebas del backend
+        working-directory: backend
+        run: uv run --python 3.11 --extra dev pytest -q
+
+      - name: Instalar como lo hace la gente
+        # Windows PowerShell 5.1, el que trae Windows, y el script por iex como en `irm … | iex`.
+        shell: powershell
+        env:
+          MEWSPLIT_NO_LAUNCH: "1"
+        run: |
+          $env:MEWSPLIT_WHEEL = (Get-ChildItem dist\*.whl).FullName
+          Get-Content dist\install.ps1 -Raw | Invoke-Expression
+
+      - name: Abrir desde el acceso directo
+        shell: powershell
+        run: |
+          $Link = Join-Path ([Environment]::GetFolderPath("Desktop")) "mewsplit.lnk"
+          if (-not (Test-Path $Link)) { throw "install.ps1 no creó el acceso directo" }
+          $Shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($Link)
+          # Sin ventana: en el runner no hay escritorio donde mostrar WebView2.
+          $env:MEWSPLIT_NO_BROWSER = "1"
+          Start-Process -FilePath $Shortcut.TargetPath -ArgumentList $Shortcut.Arguments
+          for ($i = 0; $i -lt 120; $i++) {
+            try { if ((Invoke-WebRequest http://127.0.0.1:47820/health -UseBasicParsing).StatusCode -eq 200) { break } } catch {}
+            Start-Sleep -Seconds 1
+          }
+          $Page = Invoke-WebRequest http://127.0.0.1:47820/ -UseBasicParsing
+          if ($Page.Content -notmatch "__MEWSPLIT__") { throw "La interfaz no lleva la configuración inyectada" }
+
+      - name: Log de mewsplit
+        if: failure()
+        shell: powershell
+        run: Get-Content "$env:USERPROFILE\.cache\mewsplit\mewsplit.log" -ErrorAction SilentlyContinue
+
+  publish:
+    needs: [build, windows]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+
+      - name: Publicar release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          PREV_TAG="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          cat > release-notes.md <<'EOF'
+          ## Instalar
+
+          **macOS** (Apple Silicon, macOS 12 o posterior), en la Terminal:
+
+          ```bash
+          curl -fsSL https://github.com/JUrielC/mewsplit/releases/latest/download/install.sh | sh
+          ```
+
+          **Windows 10 / 11** (64 bits), en PowerShell:
+
+          ```powershell
+          irm https://github.com/JUrielC/mewsplit/releases/latest/download/install.ps1 | iex
+          ```
+
+          Si ya tienes mewsplit, se actualiza desde la app: avisa en la pantalla de proyectos.
+
+          Uso no comercial, bajo tu propio riesgo: ver [LICENSE](https://github.com/JUrielC/mewsplit/blob/master/LICENSE).
+
+          ## Cambios
+
+          EOF
+          # Las novedades las ve el usuario en la app: solo commits que cambian la app, sin subidas
+          # de versión ni los marcados con la línea «Novedades: no» (cambios que no notaría).
+          git log --no-merges --pretty='%s' --invert-grep --grep='^Novedades: no$' "${PREV_TAG:+$PREV_TAG..}$GITHUB_REF_NAME" \
+            -- backend/mewsplit frontend native scripts/install.sh scripts/install.ps1 \
+            | grep -v '^Subir la versión\|^Versión [0-9]' > changes.txt || true
+          sed 's/^/- /' changes.txt >> release-notes.md
+          ASSETS=("dist/mewsplit-${VERSION}-py3-none-any.whl" dist/install.sh dist/install.ps1)
+          python3 scripts/update_manifest.py \
+            --version "$VERSION" \
+            --base-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME" \
+            --release-url "https://github.com/$GITHUB_REPOSITORY/releases/tag/$GITHUB_REF_NAME" \
+            --notes-file changes.txt --output latest.json "${ASSETS[@]}"
+          gh release create "$GITHUB_REF_NAME" "${ASSETS[@]}" latest.json \
+            --title "mewsplit ${VERSION}" --notes-file release-notes.md --latest --verify-tag

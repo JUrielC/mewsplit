@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import shutil
+import sys
 from pathlib import Path
 
 import numpy as np
 import soundfile as sf
 
+from mewsplit import separation
 from mewsplit.separation import _map_stems, build_instrumental, ensure_ffmpeg
 
 
@@ -67,25 +69,29 @@ def test_reuses_instrumental_when_model_provides_it(tmp_path: Path, tone):
 
 def test_ensure_ffmpeg_falls_back_to_the_bundled_binary(tmp_path: Path, monkeypatch):
     """Quien instala mewsplit para tocar no tiene Homebrew: sin esto audio-separator no arranca."""
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    monkeypatch.setattr(separation, "CACHE_DIR", tmp_path / "cache")
+    monkeypatch.setenv("PATH", str(tmp_path / "vacio"))
     assert shutil.which("ffmpeg") is None
 
     ensure_ffmpeg()
+    # La segunda vez reutiliza lo que dejó la primera.
+    ensure_ffmpeg()
 
-    found = shutil.which("ffmpeg")
-    assert found == str(tmp_path / ".cache" / "mewsplit" / "bin" / "ffmpeg")
+    found = Path(shutil.which("ffmpeg"))
+    assert found.parent == tmp_path / "cache" / "bin"
+    assert found.stem.lower() == "ffmpeg"
 
 
 def test_ensure_ffmpeg_keeps_the_system_one(tmp_path: Path, monkeypatch):
     system = tmp_path / "sys"
     system.mkdir()
-    fake = system / "ffmpeg"
+    fake = system / ("ffmpeg.exe" if sys.platform == "win32" else "ffmpeg")
     fake.write_text("#!/bin/sh\n")
     fake.chmod(0o755)
-    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(separation, "CACHE_DIR", tmp_path / "cache")
     monkeypatch.setenv("PATH", str(system))
 
     ensure_ffmpeg()
 
-    assert shutil.which("ffmpeg") == str(fake)
+    assert Path(shutil.which("ffmpeg")).parent == system
+    assert not (tmp_path / "cache").exists()

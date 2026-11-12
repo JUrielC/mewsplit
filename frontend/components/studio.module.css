@@ -315,32 +315,3 @@
   letter-spacing: var(--tracking);
   color: var(--text-dim);
 }
-
-.dropZone {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 20px;
-  flex: 1;
-  border: 0.5px dashed var(--line);
-}
-
-
-.progressTrack {
-  width: 260px;
-  height: 2px;
-  background: var(--line);
-}
-
-.progressFill {
-  height: 100%;
-  width: var(--progress-width, 0%);
-  background: var(--accent);
-  transition: width 300ms linear;
-}
-
-.options {
-  display: flex;
-  gap: 24px;
-}

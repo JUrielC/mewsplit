@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Construye el paquete que instala scripts/install.sh: un wheel de Python con
-# la interfaz ya compilada y la ventana nativa de macOS dentro, para que quien
-# lo instala no necesite Node ni Xcode.
+# Construye el paquete que instalan scripts/install.sh e install.ps1: un wheel
+# de Python con la interfaz ya compilada y la ventana nativa de macOS dentro,
+# para que quien lo instala no necesite Node ni Xcode. Es py3-none-any: el
+# mismo archivo sirve en macOS y en Windows (allí la ventana de macOS sobra y
+# se usa WebView2; ver backend/mewsplit/app.py).
 #
-# Salida: dist/mewsplit-<versión>-py3-none-macosx_12_0_arm64.whl
+# Salida: dist/mewsplit-<versión>-py3-none-any.whl, install.sh e install.ps1
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -36,9 +38,9 @@ echo "Construyendo el wheel…"
 rm -rf "$ROOT/dist"
 (cd "$ROOT/backend" && uv build --wheel --out-dir "$ROOT/dist")
 
-# Lleva un binario de macOS ARM: marcarlo como `any` dejaría que uv lo
-# instalara en cualquier sistema y fallara al abrir la ventana.
-uvx --quiet --from wheel wheel tags --remove --platform-tag macosx_12_0_arm64 "$ROOT"/dist/*.whl >/dev/null
+# Van junto al wheel en la release: los comandos de instalación y el
+# actualizador de la app los descargan de ahí.
+cp "$ROOT/scripts/install.sh" "$ROOT/scripts/install.ps1" "$ROOT/dist/"
 
 WHEEL="$(ls "$ROOT"/dist/*.whl)"
 # Si la interfaz no entró, el comando `mewsplit` arrancaría sin nada que servir.

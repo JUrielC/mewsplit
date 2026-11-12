@@ -46,6 +46,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/youtube": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Project From Youtube
+         * @description Como subir un archivo, pero el audio se descarga en segundo plano.
+         */
+        post: operations["create_project_from_youtube_projects_youtube_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{project_id}": {
         parameters: {
             query?: never;
@@ -75,6 +95,77 @@ export interface paths {
         get: operations["read_stem_projects__project_id__stems__name__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/updates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Updates */
+        get: operations["read_updates_updates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/updates/skip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Skip Update */
+        post: operations["skip_update_updates_skip_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/updates/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acknowledge Update */
+        post: operations["acknowledge_update_updates_acknowledge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/updates/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install Update
+         * @description Descarga la versión nueva, lanza el actualizador y cierra mewsplit, que vuelve a abrirse.
+         */
+        post: operations["install_update_updates_install_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -117,6 +208,11 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /** LinkIn */
+        LinkIn: {
+            /** Url */
+            url: string;
+        };
         /**
          * ProjectOut
          * @description Espejo tipado de `core.Analysis` para que OpenAPI (y por tanto
@@ -147,6 +243,8 @@ export interface components {
              * @default 0
              */
             size_bytes: number;
+            /** Source Url */
+            source_url?: string | null;
             /** Filename */
             filename: string;
             /**
@@ -206,12 +304,65 @@ export interface components {
              * @default 0
              */
             size_bytes: number;
+            /** Source Url */
+            source_url?: string | null;
+        };
+        /** SkipIn */
+        SkipIn: {
+            /** Version */
+            version: string;
         };
         /**
          * Status
          * @enum {string}
          */
-        Status: "queued" | "processing" | "done" | "error";
+        Status: "downloading" | "queued" | "processing" | "done" | "error";
+        /** UpdateInfo */
+        UpdateInfo: {
+            /** Current Version */
+            current_version: string;
+            /** Platform */
+            platform: string;
+            /**
+             * Can Self Update
+             * @default false
+             */
+            can_self_update: boolean;
+            /** Self Update Unavailable Reason */
+            self_update_unavailable_reason?: string | null;
+            /** Install Command */
+            install_command?: string | null;
+            /** Latest Version */
+            latest_version?: string | null;
+            /**
+             * Update Available
+             * @default false
+             */
+            update_available: boolean;
+            /**
+             * Skipped
+             * @default false
+             */
+            skipped: boolean;
+            /**
+             * Notes
+             * @default []
+             */
+            notes: string[];
+            /** Release Url */
+            release_url?: string | null;
+            /** Published At */
+            published_at?: string | null;
+            /** Updated From */
+            updated_from?: string | null;
+            /** Error */
+            error?: string | null;
+        };
+        /** UpdateStarted */
+        UpdateStarted: {
+            /** Version */
+            version: string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -324,6 +475,45 @@ export interface operations {
             };
         };
     };
+    create_project_from_youtube_projects_youtube_post: {
+        parameters: {
+            query?: {
+                model?: string;
+                with_chords?: boolean;
+                large_vocabulary?: boolean;
+            };
+            header?: {
+                "x-mewsplit-token"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     read_project_projects__project_id__get: {
         parameters: {
             query?: never;
@@ -409,6 +599,132 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_updates_updates_get: {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: {
+                "x-mewsplit-token"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    skip_update_updates_skip_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-mewsplit-token"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkipIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acknowledge_update_updates_acknowledge_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-mewsplit-token"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    install_update_updates_install_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-mewsplit-token"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateStarted"];
                 };
             };
             /** @description Validation Error */

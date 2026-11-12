@@ -11,6 +11,7 @@ sidecar) y a web (remoto). El frontend solo cambia la URL base.
 from __future__ import annotations
 
 import os
+import re
 import secrets
 import shutil
 import tempfile
@@ -26,8 +27,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from mewsplit import projects
+from mewsplit import projects, updates, youtube
 from mewsplit.core import DEFAULT_MODEL, SIX_STEM_MODEL, Chord, analyze, get_device
+from mewsplit.paths import CACHE_DIR
 from mewsplit.projects import Project
 
 
@@ -77,9 +79,7 @@ load_env_file(ENV_FILE)
 TOKEN = os.environ.get("MEWSPLIT_TOKEN") or secrets.token_urlsafe(32)
 
 # Sin este directorio los checkpoints de Demucs caen en /tmp, que macOS purga.
-MODEL_CACHE = Path(
-    os.environ.get("MEWSPLIT_MODEL_DIR", Path.home() / ".cache" / "mewsplit" / "models")
-)
+MODEL_CACHE = Path(os.environ.get("MEWSPLIT_MODEL_DIR", CACHE_DIR / "models"))
 
 JOBS_DIR = Path(os.environ.get("MEWSPLIT_WORK_DIR", Path(tempfile.gettempdir()) / "mewsplit"))
 
@@ -87,6 +87,7 @@ EXTENSIONS = {".wav", ".mp3", ".flac", ".aiff", ".aif", ".m4a", ".ogg"}
 
 
 class Status(str, Enum):
+    DOWNLOADING = "downloading"
     QUEUED = "queued"
     PROCESSING = "processing"
     DONE = "done"
@@ -106,13 +107,19 @@ class ProjectSummary(BaseModel):
     name: str
     status: Status
     created_at: str
-    # Avance de la separación, no del trabajo entero: los acordes terminan en
-    # ~2s y marcarlos aquí dejaría la barra al 100% durante toda la separación.
+    # Avance de la etapa que dice `status`: la descarga mientras es
+    # "downloading" y la separación después. Nunca el de los acordes: terminan
+    # en ~2s y dejarían la barra al 100% durante toda la separación.
     progress: float = 0.0
     error: str | None = None
     duration: float | None = None
     model: str | None = None
     size_bytes: int = 0
+    source_url: str | None = None
+
+
+class LinkIn(BaseModel):
+    url: str
 
 
 class ProjectOut(ProjectSummary):
@@ -132,6 +139,32 @@ class ProjectOut(ProjectSummary):
     # cuando es grande, porque tocar encima exige afinar el instrumento a ella.
     tuning_cents: float | None = None
     timings: dict[str, float] = {}
+
+
+class UpdateInfo(BaseModel):
+    current_version: str
+    platform: str
+    can_self_update: bool = False
+    # Ya en texto para mostrar: el código interno no le sirve a la interfaz.
+    self_update_unavailable_reason: str | None = None
+    install_command: str | None = None
+    latest_version: str | None = None
+    update_available: bool = False
+    skipped: bool = False
+    notes: list[str] = []
+    release_url: str | None = None
+    published_at: str | None = None
+    # La versión de antes si se acaba de actualizar, hasta que se dé por vista.
+    updated_from: str | None = None
+    error: str | None = None
+
+
+class SkipIn(BaseModel):
+    version: str
+
+
+class UpdateStarted(BaseModel):
+    version: str
 
 
 class HealthOut(BaseModel):
@@ -178,7 +211,7 @@ def _registry() -> dict[str, Job]:
     return _jobs
 
 
-app = FastAPI(title="mewsplit", version="0.1.2")
+app = FastAPI(title="mewsplit", version="0.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -219,6 +252,7 @@ def _summary(job: Job) -> ProjectSummary:
         duration=project.duration,
         model=project.model,
         size_bytes=projects.size_bytes(project.id) if project.status == "done" else 0,
+        source_url=project.source_url,
     )
 
 
@@ -235,6 +269,53 @@ def _serialize(job: Job) -> ProjectOut:
         tuning_cents=project.tuning_cents,
         timings=project.timings,
     )
+
+
+class _Deleted(Exception):
+    pass
+
+
+def _process_link(
+    job: Job, video: str, model: str, with_chords: bool, large_vocabulary: bool
+) -> None:
+    # La descarga no espera turno: solo la separación ocupa la GPU.
+    if _fetch(job, video):
+        _process(job, model, with_chords, large_vocabulary)
+
+
+def _fetch(job: Job, video: str) -> bool:
+    """Trae el audio del video al proyecto. Devuelve si quedó algo que analizar."""
+    project = job.project
+    work = JOBS_DIR / project.id / "download"
+
+    def on_title(title: str) -> None:
+        project.name = title
+        projects.save(project)
+
+    def on_progress(progress: float) -> None:
+        if job.deleted:
+            raise _Deleted
+        job.progress = progress
+
+    try:
+        audio = youtube.download(video, work, on_title=on_title, on_progress=on_progress)
+        # El nombre de archivo da nombre a la mezcla exportada: sin barras ni dos puntos.
+        safe = re.sub(r'[\\/:*?"<>|]+', " ", project.name).strip() or video
+        project.filename = f"{safe}{audio.suffix}"
+        shutil.move(audio, projects.original_path(project))
+        project.status = Status.QUEUED.value
+    except Exception as e:
+        project.status = Status.ERROR.value
+        project.error = str(e)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+        job.progress = 0.0
+
+    if job.deleted:
+        projects.delete(project.id)
+        return False
+    projects.save(project)
+    return project.status == Status.QUEUED.value
 
 
 def _process(job: Job, model: str, with_chords: bool, large_vocabulary: bool) -> None:
@@ -357,6 +438,46 @@ async def create_project(
     return _serialize(job)
 
 
+@app.post(
+    "/projects/youtube",
+    response_model=ProjectOut,
+    status_code=202,
+    dependencies=[Depends(verify_token)],
+)
+def create_project_from_youtube(
+    link: LinkIn,
+    tasks: BackgroundTasks,
+    model: str = DEFAULT_MODEL,
+    with_chords: bool = True,
+    large_vocabulary: bool = True,
+) -> ProjectOut:
+    """Como subir un archivo, pero el audio se descarga en segundo plano."""
+    try:
+        video = youtube.video_id(link.url)
+    except youtube.InvalidLink as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+    url = youtube.watch_url(video)
+    project = Project(
+        id=uuid.uuid4().hex,
+        # Hasta que llega el título del video, unos segundos después.
+        name=f"youtu.be/{video}",
+        filename="",
+        created_at=datetime.now().isoformat(timespec="seconds"),
+        status=Status.DOWNLOADING.value,
+        source_url=url,
+    )
+    projects.save(project)
+
+    job = Job(project=project)
+    _registry()
+    with _lock:
+        _jobs[project.id] = job
+
+    tasks.add_task(_process_link, job, video, model, with_chords, large_vocabulary)
+    return _serialize(job)
+
+
 @app.get("/projects/{project_id}", response_model=ProjectOut, dependencies=[Depends(verify_token)])
 def read_project(project_id: str) -> ProjectOut:
     return _serialize(_get_job(project_id))
@@ -381,6 +502,33 @@ def delete_project(project_id: str) -> None:
         job.deleted = True
     else:
         projects.delete(project_id)
+
+
+@app.get("/updates", response_model=UpdateInfo, dependencies=[Depends(verify_token)])
+def read_updates(force: bool = False) -> UpdateInfo:
+    return UpdateInfo(**updates.check_for_updates(force=force))
+
+
+@app.post("/updates/skip", status_code=204, dependencies=[Depends(verify_token)])
+def skip_update(payload: SkipIn) -> None:
+    updates.skip_version(payload.version)
+
+
+@app.post("/updates/acknowledge", status_code=204, dependencies=[Depends(verify_token)])
+def acknowledge_update() -> None:
+    updates.acknowledge_update()
+
+
+@app.post("/updates/install", response_model=UpdateStarted, dependencies=[Depends(verify_token)])
+def install_update() -> UpdateStarted:
+    """Descarga la versión nueva, lanza el actualizador y cierra mewsplit, que vuelve a abrirse."""
+    try:
+        # Cerrar a mitad de una descarga o un análisis lo dejaría interrumpido.
+        if busy():
+            raise updates.UpdateError("busy")
+        return UpdateStarted(**updates.start_update())
+    except updates.UpdateError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
 
 
 def run(host: str = "127.0.0.1", port: int | None = None) -> None:

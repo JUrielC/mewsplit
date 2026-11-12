@@ -24,20 +24,13 @@ from pathlib import Path
 import soundfile as sf
 
 from mewsplit.core import Chord
+from mewsplit.paths import DATA_DIR
 
-# En macOS, Application Support es donde van los datos que el usuario no
-# gestiona a mano (ni Documentos, que es suyo, ni la caché, que el sistema
-# puede vaciar).
-PROJECTS_DIR = Path(
-    os.environ.get(
-        "MEWSPLIT_PROJECTS_DIR",
-        Path.home() / "Library" / "Application Support" / "mewsplit" / "projects",
-    )
-)
+PROJECTS_DIR = Path(os.environ.get("MEWSPLIT_PROJECTS_DIR", DATA_DIR / "projects"))
 
 # Estados que solo tienen sentido mientras el proceso sigue vivo: si aparecen
 # al arrancar, el análisis se cortó (se cerró la app a mitad).
-UNFINISHED = {"queued", "processing"}
+UNFINISHED = {"downloading", "queued", "processing"}
 INTERRUPTED = "El análisis se interrumpió: se cerró mewsplit antes de terminar."
 
 
@@ -57,6 +50,8 @@ class Project:
     tuning_cents: float | None = None
     timings: dict[str, float] = field(default_factory=dict)
     stems: list[str] = field(default_factory=list)
+    # El enlace de YouTube del que salió el audio; None si se subió un archivo.
+    source_url: str | None = None
 
 
 def project_dir(project_id: str) -> Path:

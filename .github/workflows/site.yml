@@ -1,0 +1,45 @@
+name: Manifiesto de actualizaciones
+
+# Publica en mewsplit-releases.jurielc.com (GitHub Pages, dominio propio en la
+# configuración del repositorio) el latest.json de la última release: es lo que
+# consulta la app (MANIFEST_URL en backend/mewsplit/updates.py). Así se puede
+# cambiar de hosting sin dejar sin actualizaciones a las copias ya instaladas.
+# Corre en la rama principal porque el entorno github-pages solo admite
+# despliegues desde ella, no desde el tag que dispara el release.
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: site
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Manifiesto de la última release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p site/updates
+          gh release download --repo "$GITHUB_REPOSITORY" --pattern latest.json --dir site/updates
+          python3 -c "import json; m = json.load(open('site/updates/latest.json')); print('Publicando mewsplit', m['version'])"
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

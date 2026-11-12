@@ -1,42 +1,118 @@
-/* La ventana: panel de proyectos a la izquierda y el estudio al resto del
-   ancho. En una herramienta multipista el ancho es resolución temporal. */
-.app {
+/* Navegación de la cabecera: "proyectos / canción". */
+.crumbs {
   display: flex;
-  height: 100vh;
-  width: 100%;
-}
-
-.app :global(.workspace) {
-  flex: 1;
+  align-items: baseline;
+  gap: calc(var(--step) * 4);
   min-width: 0;
 }
 
-/* Panel de proyectos. Mismas reglas que el estudio: sin cajas ni sombras,
-   la separación son líneas de 0.5px y la jerarquía sale del espaciado. */
-
-.panel {
-  display: flex;
-  flex-direction: column;
-  gap: calc(var(--step) * 2);
-  width: 220px;
-  flex-shrink: 0;
-  height: 100vh;
-  padding: calc(var(--step) * 2) calc(var(--step) * 2);
-  border-right: 0.5px solid var(--line);
-  overflow: hidden;
-}
-
-.head {
+.trail {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  padding-bottom: var(--step);
+  gap: var(--step);
+  min-width: 0;
+}
+
+.here {
+  color: var(--text);
+}
+
+.current {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+
+/* Pantalla de proyectos. Mismas reglas que el estudio: sin cajas ni sombras,
+   la separación son líneas de 0.5px y la jerarquía sale del espaciado. */
+.screen {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.section {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: calc(var(--step) * 3);
+  padding: calc(var(--step) * 3) 0;
   border-bottom: 0.5px solid var(--line);
 }
 
-.stems {
+/* Los guardados ocupan el resto de la altura y desplazan solo su lista. */
+.saved {
+  flex: 1;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+  border-bottom: none;
+}
+
+.sectionHead {
   display: flex;
+  flex-direction: column;
+  gap: var(--step);
+}
+
+.sectionHead :global(.data) {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
   gap: calc(var(--step) * 2);
+}
+
+.field {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--step) * 3);
+}
+
+.fieldName {
+  width: 96px;
+  flex-shrink: 0;
+  color: var(--text-dim);
+}
+
+.primary {
+  color: var(--text);
+}
+
+.primary:disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.hint {
+  color: var(--text-dim);
+}
+
+/* Campo sin caja: solo la línea de base. */
+.link {
+  flex: 1;
+  max-width: 560px;
+  padding: 0 0 6px;
+  background: none;
+  border: none;
+  border-bottom: 0.5px solid var(--line);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  outline: none;
+}
+
+.link::placeholder {
+  color: var(--text-dim);
+  font-family: var(--font-sans);
+  letter-spacing: var(--tracking);
+}
+
+.link:focus {
+  border-bottom-color: var(--text-soft);
 }
 
 .stems button {
@@ -47,34 +123,50 @@
   color: var(--text);
 }
 
+.table {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .list {
   flex: 1;
+  min-height: 0;
   margin: 0;
   padding: 0;
   list-style: none;
   overflow-y: auto;
 }
 
-.item {
+.row {
   display: flex;
-  align-items: flex-start;
-  gap: var(--step);
-  padding: var(--step) 0;
+  align-items: baseline;
   border-bottom: 0.5px solid var(--line-faint);
 }
 
-.open {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  text-align: left;
-  color: var(--text-soft);
+.columns {
+  border-bottom-color: var(--line);
 }
 
-.selected .open {
-  color: var(--text);
+.columns :global(.label) {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.cells {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr) 72px 48px 72px 96px 72px;
+  gap: calc(var(--step) * 2);
+  align-items: baseline;
+  min-width: 0;
+  padding: calc(var(--step) * 1.5) 0;
+  text-align: left;
+}
+
+.cells :global(.data) {
+  color: var(--text-dim);
+  font-size: 11px;
 }
 
 .name {
@@ -82,11 +174,29 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   font-size: 13px;
+  color: var(--text-soft);
 }
 
-.open :global(.data) {
-  color: var(--text-dim);
-  font-size: 11px;
+.open:hover .name,
+.open:focus-visible .name {
+  color: var(--text);
+}
+
+/* Descargando, separando o con error: una sola celda en vez de los datos. */
+.wide {
+  grid-column: 2 / -1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.action {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--step);
+  width: 136px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 /* La × solo aparece al pasar por la fila: una lista llena de cruces invita
@@ -96,20 +206,32 @@
   color: var(--text-dim);
 }
 
-.item:hover .remove,
+.row:hover .remove,
 .remove:focus-visible {
   opacity: 1;
 }
 
-.confirm {
-  display: flex;
-  gap: var(--step);
-  white-space: nowrap;
-}
+@media (max-width: 760px) {
+  .section {
+    grid-template-columns: minmax(0, 1fr);
+    gap: calc(var(--step) * 2);
+  }
 
-.toggle {
-  align-self: flex-start;
-  color: var(--text-dim);
+  .saved {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .cells {
+    grid-template-columns: minmax(0, 1fr) 56px 40px;
+  }
+
+  .optional {
+    display: none;
+  }
+
+  .action {
+    width: 112px;
+  }
 }
 
 /* Proyecto que se está analizando o que falló: el lugar del estudio. */
@@ -173,6 +295,60 @@
   margin-left: auto;
   color: var(--text);
   cursor: pointer;
+}
+
+/* Aviso de versión nueva: misma franja que el de afinación, con las
+   novedades y el comando manual debajo cuando hacen falta. */
+.updateBanner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--step);
+  padding-bottom: calc(var(--step) * 2);
+  border-bottom: 0.5px solid var(--line);
+}
+
+.updateRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--step) calc(var(--step) * 3);
+}
+
+.updateActions {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--step) * 3);
+  margin-left: auto;
+}
+
+.updateNotes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0 0 0 calc(var(--step) * 2);
+  list-style: none;
+}
+
+.updateNotes li::before {
+  content: "– ";
+  color: var(--text-dim);
+}
+
+.updateManual {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--step) calc(var(--step) * 2);
+}
+
+.command {
+  color: var(--text);
+  user-select: all;
+}
+
+.updateError {
+  color: var(--text);
 }
 
 .tuningNotice {
