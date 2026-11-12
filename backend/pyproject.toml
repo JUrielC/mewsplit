@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mewsplit"
-version = "0.1.2"
+version = "0.2.0"
 description = "Separación de stems con detección de acordes"
 requires-python = ">=3.11"
 license = { text = "PolyForm-Noncommercial-1.0.0" }
