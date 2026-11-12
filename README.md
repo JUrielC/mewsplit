@@ -19,11 +19,18 @@ el instrumento que tocas tú o hacer un karaoke.
 
 ## Instalación
 
-Necesitas una Mac con Apple Silicon (M1 o posterior). Abre la app **Terminal**
-(⌘ + espacio, escribe "Terminal"), pega esta línea y pulsa Enter:
+| | macOS | Windows |
+|---|---|---|
+| Sistema | macOS 12 o posterior | Windows 10 u 11 de 64 bits (en ARM no está probado) |
+| Equipo | Mac con Apple Silicon (M1 o posterior) | Intel o AMD; la separación usa el procesador |
+
+### En macOS
+
+Abre la app **Terminal** (⌘ + espacio, escribe "Terminal"), pega esta línea y
+pulsa Enter:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/JUrielC/mewsplit/master/scripts/install.sh | sh
+curl -fsSL https://github.com/JUrielC/mewsplit/releases/latest/download/install.sh | sh
 ```
 
 Cuando termine, mewsplit queda en tu carpeta de Aplicaciones: ábrelo con
@@ -31,8 +38,21 @@ Spotlight (⌘ + espacio, "mewsplit") o con doble clic, como cualquier app:
 tiene su propia ventana y su propio icono en el Dock, y al cerrarla se
 detiene del todo.
 
-La primera instalación descarga alrededor de 1 GB y la primera canción baja
-los modelos (~100 MB); después ya no hace falta volver a descargarlos.
+### En Windows
+
+Abre **PowerShell** (tecla Windows, escribe "PowerShell"), pega esta línea y
+pulsa Enter:
+
+```powershell
+irm https://github.com/JUrielC/mewsplit/releases/latest/download/install.ps1 | iex
+```
+
+Cuando termine, mewsplit tiene un acceso directo en el **Escritorio** y en el
+**Menú Inicio**, y se abre en su propia ventana, sin consola.
+
+En los dos sistemas, la primera instalación descarga PyTorch (en macOS
+alrededor de 1 GB) y la primera canción baja los modelos (~100 MB); después ya
+no hace falta volver a descargarlos.
 
 ### Si prefieres que te guíe un asistente de IA
 
@@ -41,28 +61,43 @@ Copia esto en ChatGPT, Claude, Gemini o el que uses:
 > Quiero instalar mewsplit en mi Mac. Guíame paso a paso, como a alguien que
 > nunca ha usado la Terminal: cómo abrir la aplicación Terminal, y luego que
 > pegue exactamente este comando y pulse Enter:
-> `curl -fsSL https://raw.githubusercontent.com/JUrielC/mewsplit/master/scripts/install.sh | sh`.
+> `curl -fsSL https://github.com/JUrielC/mewsplit/releases/latest/download/install.sh | sh`.
 > No me propongas otros comandos ni pasos alternativos. Si aparece un error,
 > pídeme que te pegue el mensaje completo y ayúdame a entenderlo.
 
+En Windows, cambia "mi Mac" por "mi PC con Windows", "Terminal" por
+"PowerShell" y el comando por el de Windows.
+
 ### Actualizar o desinstalar
 
-Para **actualizar**, vuelve a pegar el mismo comando de instalación: siempre
-instala la última versión publicada y reemplaza la anterior.
+Para **actualizar**, mewsplit te avisa en la pantalla de proyectos cuando hay
+una versión nueva: ahí ves las novedades y actualizas con un clic. Descarga la
+versión nueva, comprueba su huella SHA-256, se cierra y vuelve a abrirse ya
+actualizado, con tus proyectos intactos. Si hay una canción descargándose o
+separándose, espera a que termine. También puedes volver a pegar el comando de
+instalación: siempre instala la última versión publicada.
 
-Para **desinstalar**:
+Para **desinstalar** (tus proyectos se quedan; bórralos a mano si quieres):
 
 ```bash
 uv tool uninstall mewsplit && rm -rf ~/Applications/mewsplit.app ~/.cache/mewsplit
 ```
 
+```powershell
+uv tool uninstall mewsplit; Remove-Item "$env:USERPROFILE\Desktop\mewsplit.lnk", "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\mewsplit.lnk", "$env:USERPROFILE\.cache\mewsplit" -Recurse -Force -ErrorAction SilentlyContinue
+```
+
+Los proyectos viven en `~/Library/Application Support/mewsplit` (macOS) y en
+`%LOCALAPPDATA%\mewsplit` (Windows).
+
 ### ¿Por qué un comando y no una app descargable?
 
 macOS bloquea las apps descargadas con el navegador si no están firmadas y
 notarizadas por Apple, y desde macOS Sequoia ya no basta con el clic derecho:
-hay que ir a Configuración del Sistema. Lo que se instala desde la Terminal no
-lleva esa marca de "descargado de internet", y el acceso directo lo crea el
-instalador en tu propia Mac, así que se abre sin avisos.
+hay que ir a Configuración del Sistema. Windows hace lo mismo con SmartScreen
+si el instalador no lleva un certificado de pago. Lo que se instala desde la
+terminal no lleva esa marca de "descargado de internet", y el acceso directo
+lo crea el instalador en tu propio equipo, así que se abre sin avisos.
 
 ## Qué puede hacer
 
@@ -89,7 +124,8 @@ instalador en tu propia Mac, así que se abre sin avisos.
   la guitarra sale bien.
 - Un **instrumental** (todo menos la voz) se genera automáticamente.
 - Barra de progreso real durante la separación. Una canción de 3:39 tarda
-  unos 32 s en un MacBook M3, sin GPU dedicada.
+  unos 32 s en un MacBook M3, sin GPU dedicada. En Windows corre en el
+  procesador (el PyTorch que se instala no usa la GPU) y tarda bastante más.
 - Formatos de entrada: WAV, MP3, FLAC, AIFF, M4A y OGG, o un enlace de YouTube.
 
 ### Acordes
@@ -200,19 +236,45 @@ repositorio.
 
 ### Publicar una versión
 
+La publica GitHub Actions ([`release.yml`](.github/workflows/release.yml)) al
+subir un tag. La versión tiene que coincidir en `backend/pyproject.toml`,
+`backend/mewsplit/__init__.py`, `backend/mewsplit/api.py` y
+`frontend/package.json`, y el tag es `v` más esa versión:
+
 ```bash
-scripts/build-release.sh    # interfaz estática + ventana nativa + wheel en dist/
+git tag v0.2.0 && git push origin v0.2.0
 ```
 
-Requiere las Command Line Tools de Xcode (`xcode-select --install`) para
-compilar la ventana. El wheel lleva la interfaz y la ventana ya compiladas,
-así que instalarlo no requiere Node ni Xcode.
-Se sube como asset de una GitHub Release; `scripts/install.sh` instala siempre
-el de la última. Para probar el instalador sin publicar nada:
+El workflow corre las pruebas, compila en macOS, prueba en Windows (pruebas,
+`install.ps1` y abrir desde el acceso directo) y publica la release con el
+wheel, `install.sh`, `install.ps1` y `latest.json`. Las novedades que ve la
+gente en la app son los títulos de los commits desde el tag anterior que tocan
+la app; deja fuera uno con la línea `Novedades: no` en el mensaje. Lanzado a
+mano desde Actions hace todo menos publicar: sirve para probar en Windows
+antes de etiquetar.
+
+Para compilar en local hacen falta las Command Line Tools de Xcode
+(`xcode-select --install`):
 
 ```bash
+scripts/build-release.sh    # interfaz estática + ventana nativa + wheel e instaladores en dist/
 MEWSPLIT_WHEEL="$(ls dist/*.whl)" MEWSPLIT_APP_DIR=/tmp/apps sh scripts/install.sh
 ```
+
+El wheel es `py3-none-any`: el mismo archivo sirve en macOS y en Windows, y
+lleva la interfaz y la ventana de macOS ya compiladas, así que instalarlo no
+requiere Node ni Xcode.
+
+### Canal de actualizaciones
+
+La app no consulta GitHub directamente: lee el manifiesto en
+`https://mewsplit-releases.jurielc.com/updates/latest.json` (`MANIFEST_URL` en
+[`backend/mewsplit/updates.py`](backend/mewsplit/updates.py)). Cada release
+genera ese manifiesto (versión, cambios, y URL y huella SHA-256 de cada
+archivo) y [`site.yml`](.github/workflows/site.yml) lo publica en GitHub Pages,
+así que se puede cambiar de hosting sin dejar sin actualizaciones a las copias
+ya instaladas. Para probar contra otro manifiesto, arranca la app con
+`MEWSPLIT_UPDATE_URL=<url del manifiesto>`.
 
 ## Arquitectura
 
@@ -222,12 +284,16 @@ backend/mewsplit/separation.py   Demucs vía audio-separator
 backend/mewsplit/chords.py       BTC + decodificación propia de acordes
 backend/mewsplit/api.py          FastAPI: trabajos en segundo plano, token, puerto
 backend/mewsplit/youtube.py      el audio de un enlace de YouTube, vía yt-dlp
+backend/mewsplit/updates.py      avisar de versiones nuevas e instalarlas desde la app
+backend/mewsplit/paths.py        dónde van datos y caché en macOS y en Windows
 backend/mewsplit/app.py          el comando `mewsplit`: API + interfaz + ventana
-native/macos/main.swift          la ventana nativa: lanza el servidor y muestra la interfaz
+native/macos/main.swift          la ventana de macOS: lanza el servidor y muestra la interfaz
 backend/cli.py                   la misma lógica desde la terminal
 frontend/                        Next.js: la misma build sirve a web y al comando
 frontend/lib/audio.ts            el mezclador (Web Audio API)
-scripts/install.sh               instalador de una línea para usuarios
+scripts/install.sh, install.ps1  instaladores de una línea para macOS y Windows
+scripts/update_manifest.py       genera latest.json en cada release
+.github/workflows/               release al subir un tag y el manifiesto en Pages
 desktop/                         Tauri, superado por la ventana nativa
 shared/types.ts                  tipos del contrato, generados desde OpenAPI
 ```
@@ -316,7 +382,7 @@ corren en paralelo y los acordes no esperan a los stems.
 
 Dentro: separación en 4 o 6 stems, acordes con tiempos, proyectos guardados,
 mezclador, modos de práctica, exportación de mezclas, instalación de un
-comando en macOS.
+comando en macOS y Windows, actualizaciones desde la app.
 
 Fuera por ahora: transcripción a MIDI, detección de tempo y compás, edición de
 los acordes detectados, cuentas de usuario.
@@ -334,6 +400,11 @@ dentro del paquete de Python, y el instalador la copia en `mewsplit.app`. Así
 mewsplit es una app de verdad, con ventana e icono propios, sin firma ni
 notarización de Apple (99 USD al año). La App Store no es viable: exige
 sandboxing, que choca con la descarga de modelos en tiempo de ejecución.
+
+En Windows el mismo paquete abre una ventana de WebView2 (el motor de Edge,
+que trae Windows) con [pywebview](https://github.com/r0x0r/pywebview); si no
+hay WebView2, la abre Edge o Chrome en modo app. El acceso directo apunta a
+`pythonw.exe`, así que no aparece consola.
 
 ## Licencia y atribución
 
@@ -395,6 +466,9 @@ modificar y bajo su propia licencia.
 
 La separación usa **Demucs v4** (Alexandre Défossez et al.) vía
 [audio-separator](https://github.com/nomadkaraoke/python-audio-separator).
+
+La ventana de Windows usa [pywebview](https://github.com/r0x0r/pywebview)
+(BSD-3-Clause) y [Python.NET](https://github.com/pythonnet/pythonnet) (MIT).
 
 Los enlaces de YouTube se descargan con
 [yt-dlp](https://github.com/yt-dlp/yt-dlp) (Unlicense), que resuelve el reto

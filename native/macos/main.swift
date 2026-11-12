@@ -23,6 +23,11 @@ import WebKit
 /// `MEWSPLIT_APP_READY url=<url> owner=<new|existing>` cuando está listo.
 private let readyPrefix = "MEWSPLIT_APP_READY "
 
+/// El servidor sale con este código tras lanzar el actualizador (UPDATE_EXIT_CODE
+/// en backend/mewsplit/updates.py): la app se cierra sin error y el instalador
+/// vuelve a abrir la versión nueva.
+private let updateExitCode: Int32 = 75
+
 private let logURL = FileManager.default.homeDirectoryForCurrentUser
     .appendingPathComponent("Library/Logs/mewsplit.log")
 
@@ -140,6 +145,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Si ya había otra instancia, el proceso avisa dónde está y termina:
         // es lo esperado, la ventana sigue usando ese servidor.
         if baseURL != nil && !ownsServer { return }
+        if process.terminationStatus == updateExitCode {
+            NSApp.terminate(nil)
+            return
+        }
         keepAliveTimer?.invalidate()
         showStatus("mewsplit se detuvo inesperadamente. revisa ~/Library/Logs/mewsplit.log", isError: true)
     }

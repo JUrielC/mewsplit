@@ -24,16 +24,9 @@ from pathlib import Path
 import soundfile as sf
 
 from mewsplit.core import Chord
+from mewsplit.paths import DATA_DIR
 
-# En macOS, Application Support es donde van los datos que el usuario no
-# gestiona a mano (ni Documentos, que es suyo, ni la caché, que el sistema
-# puede vaciar).
-PROJECTS_DIR = Path(
-    os.environ.get(
-        "MEWSPLIT_PROJECTS_DIR",
-        Path.home() / "Library" / "Application Support" / "mewsplit" / "projects",
-    )
-)
+PROJECTS_DIR = Path(os.environ.get("MEWSPLIT_PROJECTS_DIR", DATA_DIR / "projects"))
 
 # Estados que solo tienen sentido mientras el proceso sigue vivo: si aparecen
 # al arrancar, el análisis se cortó (se cerró la app a mitad).

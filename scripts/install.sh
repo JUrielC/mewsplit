@@ -1,7 +1,10 @@
 #!/bin/sh
 # Instala mewsplit en una Mac con Apple Silicon:
 #
-#   curl -fsSL https://raw.githubusercontent.com/JUrielC/mewsplit/master/scripts/install.sh | sh
+#   curl -fsSL https://github.com/JUrielC/mewsplit/releases/latest/download/install.sh | sh
+#
+# También lo corre el actualizador de la app (backend/mewsplit/updates.py) con
+# MEWSPLIT_WHEEL apuntando a la versión ya descargada y verificada.
 #
 # Por qué un comando y no un .dmg: macOS bloquea lo descargado con el
 # navegador si no está firmado y notarizado por Apple. Lo que instala uv desde
@@ -120,7 +123,7 @@ codesign --force --sign - "$APP" >/dev/null 2>&1 || true
 say ""
 say "Listo. mewsplit está en tu carpeta de Aplicaciones: búscalo con Spotlight (⌘ + espacio)."
 say "La primera canción tarda un poco más: se descargan los modelos (~100 MB)."
-say "Para actualizarlo, vuelve a ejecutar este mismo comando."
+say "mewsplit avisa cuando hay una versión nueva y se actualiza desde la app."
 say "Para desinstalarlo: uv tool uninstall mewsplit && rm -rf \"$APP\" ~/.cache/mewsplit"
 
 if [ -z "${MEWSPLIT_NO_LAUNCH:-}" ]; then

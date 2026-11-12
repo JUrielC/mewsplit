@@ -10,12 +10,15 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 from contextlib import nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 import soundfile as sf
+
+from mewsplit.paths import CACHE_DIR
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -176,15 +179,21 @@ def ensure_ffmpeg() -> None:
     import imageio_ffmpeg
 
     bundled = Path(imageio_ffmpeg.get_ffmpeg_exe())
-    bin_dir = Path.home() / ".cache" / "mewsplit" / "bin"
+    bin_dir = CACHE_DIR / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
-    link = bin_dir / "ffmpeg"
-    # Una actualización de imageio-ffmpeg cambia la ruta del binario: el enlace
-    # viejo quedaría apuntando a la nada.
-    if link.is_symlink() and link.resolve() != bundled.resolve():
-        link.unlink()
-    if not link.exists():
-        link.symlink_to(bundled)
+    if sys.platform == "win32":
+        # Windows solo deja crear enlaces simbólicos con permisos de administrador: se copia.
+        copy = bin_dir / "ffmpeg.exe"
+        if not copy.exists() or copy.stat().st_size != bundled.stat().st_size:
+            shutil.copy2(bundled, copy)
+    else:
+        link = bin_dir / "ffmpeg"
+        # Una actualización de imageio-ffmpeg cambia la ruta del binario: el enlace
+        # viejo quedaría apuntando a la nada.
+        if link.is_symlink() and link.resolve() != bundled.resolve():
+            link.unlink()
+        if not link.exists():
+            link.symlink_to(bundled)
     os.environ["PATH"] = f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"
 
 

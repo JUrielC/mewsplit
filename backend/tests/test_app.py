@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import threading
 import time
 from pathlib import Path
@@ -101,3 +102,64 @@ def test_ready_line_is_what_the_native_window_parses():
     assert ready_line("http://127.0.0.1:47820", "new") == (
         "MEWSPLIT_APP_READY url=http://127.0.0.1:47820 owner=new"
     )
+
+
+class FakeWindow:
+    def __init__(self):
+        self.calls = []
+
+    def restore(self):
+        self.calls.append("restore")
+
+    def show(self):
+        self.calls.append("show")
+
+
+def test_a_second_launch_brings_the_open_window_to_the_front(web: Path, monkeypatch):
+    """En Windows, abrir mewsplit otra vez trae al frente la ventana que ya hay en vez de otra."""
+    window = FakeWindow()
+    monkeypatch.setattr(launcher, "_window", window)
+
+    assert client(web).post("/window/show", headers={"X-Mewsplit-Token": "otro"}).status_code == 404
+    assert window.calls == []
+
+    response = client(web).post("/window/show", headers={"X-Mewsplit-Token": "secreto"})
+    assert response.status_code == 204
+    assert window.calls == ["restore", "show"]
+
+
+def test_without_a_window_there_is_nothing_to_bring_to_the_front(web: Path):
+    response = client(web).post("/window/show", headers={"X-Mewsplit-Token": "secreto"})
+    assert response.status_code == 404
+
+
+def test_without_a_console_the_output_goes_to_the_log(monkeypatch, tmp_path: Path):
+    """pythonw.exe (el acceso directo de Windows) arranca con stdout y stderr en None."""
+    monkeypatch.setattr(launcher, "CACHE_DIR", tmp_path)
+    monkeypatch.setattr(launcher, "LOG_FILE", tmp_path / "mewsplit.log")
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+
+    launcher._ensure_stdio()
+    print("hola", file=sys.stdout, flush=True)
+    # Windows no deja borrar la carpeta temporal con el log abierto.
+    sys.stdout.close()
+
+    assert (tmp_path / "mewsplit.log").read_text(encoding="utf-8") == "hola\n"
+
+
+def test_a_busy_preferred_port_falls_back_to_a_free_one():
+    first = launcher._bind(0)
+    taken = first.getsockname()[1]
+    try:
+        second = launcher._bind(taken)
+        assert second.getsockname()[1] != taken
+        second.close()
+    finally:
+        first.close()
+
+
+def test_the_startup_message_page_escapes_the_error():
+    page = launcher.message_page("falló <script>")
+    assert "&lt;script&gt;" in page
+    assert "<script>" not in page

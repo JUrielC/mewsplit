@@ -14,6 +14,7 @@ export type ProjectSummary = components["schemas"]["ProjectSummary"];
 export type Chord = components["schemas"]["ChordOut"];
 export type Health = components["schemas"]["HealthOut"];
 export type Status = components["schemas"]["Status"];
+export type UpdateInfo = components["schemas"]["UpdateInfo"];
 
 declare global {
   interface Window {
@@ -131,6 +132,28 @@ export function getProject(id: string): Promise<Project> {
 /** Si se estaba analizando, el backend termina y lo descarta sin guardarlo. */
 export function deleteProject(id: string): Promise<void> {
   return request<void>(`/projects/${id}`, { method: "DELETE" });
+}
+
+/** Si hay versión nueva o se acaba de actualizar. El backend consulta una vez por apertura. */
+export function getUpdates(): Promise<UpdateInfo> {
+  return request<UpdateInfo>("/updates");
+}
+
+export function skipUpdate(version: string): Promise<void> {
+  return request<void>("/updates/skip", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ version }),
+  });
+}
+
+export function acknowledgeUpdate(): Promise<void> {
+  return request<void>("/updates/acknowledge", { method: "POST" });
+}
+
+/** Descarga la versión nueva y cierra mewsplit, que vuelve a abrirse ya actualizado. */
+export function installUpdate(): Promise<{ version: string }> {
+  return request<{ version: string }>("/updates/install", { method: "POST" });
 }
 
 export async function downloadStem(projectId: string, stem: string): Promise<ArrayBuffer> {

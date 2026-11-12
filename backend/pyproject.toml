@@ -31,6 +31,8 @@ dependencies = [
   # fija deja de descargar en semanas. `deno` resuelve el reto de JavaScript
   # que YouTube exige, sin Homebrew.
   "yt-dlp[default,deno]>=2026.10.26",
+  # La ventana de Windows (WebView2). En macOS la ventana es native/macos/main.swift.
+  "pywebview==6.2.1; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]

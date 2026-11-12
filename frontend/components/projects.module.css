@@ -297,6 +297,60 @@
   cursor: pointer;
 }
 
+/* Aviso de versión nueva: misma franja que el de afinación, con las
+   novedades y el comando manual debajo cuando hacen falta. */
+.updateBanner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--step);
+  padding-bottom: calc(var(--step) * 2);
+  border-bottom: 0.5px solid var(--line);
+}
+
+.updateRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--step) calc(var(--step) * 3);
+}
+
+.updateActions {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--step) * 3);
+  margin-left: auto;
+}
+
+.updateNotes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0 0 0 calc(var(--step) * 2);
+  list-style: none;
+}
+
+.updateNotes li::before {
+  content: "– ";
+  color: var(--text-dim);
+}
+
+.updateManual {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--step) calc(var(--step) * 2);
+}
+
+.command {
+  color: var(--text);
+  user-select: all;
+}
+
+.updateError {
+  color: var(--text);
+}
+
 .tuningNotice {
   color: var(--text);
   margin-left: auto;

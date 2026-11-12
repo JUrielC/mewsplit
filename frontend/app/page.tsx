@@ -15,6 +15,7 @@ import {
 import { ProjectsScreen } from "@/components/ProjectsScreen";
 import { Studio } from "@/components/Studio";
 import { TuningNotice } from "@/components/TuningNotice";
+import { UpdateNotice } from "@/components/UpdateNotice";
 import styles from "@/components/projects.module.css";
 import { isUnfinished, stageText } from "@/lib/projects";
 import { formatCents, isDetuned, referencePitch } from "@/lib/tuning";
@@ -218,6 +219,8 @@ export default function Page() {
           {!error && project?.device ? ` · ${project.device}` : ""}
         </span>
       </header>
+
+      {projects !== null && !opened && <UpdateNotice />}
 
       {project?.id === openId &&
         project.status === "done" &&

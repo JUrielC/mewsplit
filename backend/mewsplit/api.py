@@ -27,8 +27,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from mewsplit import projects, youtube
+from mewsplit import projects, updates, youtube
 from mewsplit.core import DEFAULT_MODEL, SIX_STEM_MODEL, Chord, analyze, get_device
+from mewsplit.paths import CACHE_DIR
 from mewsplit.projects import Project
 
 
@@ -78,9 +79,7 @@ load_env_file(ENV_FILE)
 TOKEN = os.environ.get("MEWSPLIT_TOKEN") or secrets.token_urlsafe(32)
 
 # Sin este directorio los checkpoints de Demucs caen en /tmp, que macOS purga.
-MODEL_CACHE = Path(
-    os.environ.get("MEWSPLIT_MODEL_DIR", Path.home() / ".cache" / "mewsplit" / "models")
-)
+MODEL_CACHE = Path(os.environ.get("MEWSPLIT_MODEL_DIR", CACHE_DIR / "models"))
 
 JOBS_DIR = Path(os.environ.get("MEWSPLIT_WORK_DIR", Path(tempfile.gettempdir()) / "mewsplit"))
 
@@ -140,6 +139,32 @@ class ProjectOut(ProjectSummary):
     # cuando es grande, porque tocar encima exige afinar el instrumento a ella.
     tuning_cents: float | None = None
     timings: dict[str, float] = {}
+
+
+class UpdateInfo(BaseModel):
+    current_version: str
+    platform: str
+    can_self_update: bool = False
+    # Ya en texto para mostrar: el código interno no le sirve a la interfaz.
+    self_update_unavailable_reason: str | None = None
+    install_command: str | None = None
+    latest_version: str | None = None
+    update_available: bool = False
+    skipped: bool = False
+    notes: list[str] = []
+    release_url: str | None = None
+    published_at: str | None = None
+    # La versión de antes si se acaba de actualizar, hasta que se dé por vista.
+    updated_from: str | None = None
+    error: str | None = None
+
+
+class SkipIn(BaseModel):
+    version: str
+
+
+class UpdateStarted(BaseModel):
+    version: str
 
 
 class HealthOut(BaseModel):
@@ -477,6 +502,33 @@ def delete_project(project_id: str) -> None:
         job.deleted = True
     else:
         projects.delete(project_id)
+
+
+@app.get("/updates", response_model=UpdateInfo, dependencies=[Depends(verify_token)])
+def read_updates(force: bool = False) -> UpdateInfo:
+    return UpdateInfo(**updates.check_for_updates(force=force))
+
+
+@app.post("/updates/skip", status_code=204, dependencies=[Depends(verify_token)])
+def skip_update(payload: SkipIn) -> None:
+    updates.skip_version(payload.version)
+
+
+@app.post("/updates/acknowledge", status_code=204, dependencies=[Depends(verify_token)])
+def acknowledge_update() -> None:
+    updates.acknowledge_update()
+
+
+@app.post("/updates/install", response_model=UpdateStarted, dependencies=[Depends(verify_token)])
+def install_update() -> UpdateStarted:
+    """Descarga la versión nueva, lanza el actualizador y cierra mewsplit, que vuelve a abrirse."""
+    try:
+        # Cerrar a mitad de una descarga o un análisis lo dejaría interrumpido.
+        if busy():
+            raise updates.UpdateError("busy")
+        return UpdateStarted(**updates.start_update())
+    except updates.UpdateError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
 
 
 def run(host: str = "127.0.0.1", port: int | None = None) -> None:
