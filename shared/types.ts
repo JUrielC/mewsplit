@@ -46,6 +46,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/youtube": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Project From Youtube
+         * @description Como subir un archivo, pero el audio se descarga en segundo plano.
+         */
+        post: operations["create_project_from_youtube_projects_youtube_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{project_id}": {
         parameters: {
             query?: never;
@@ -117,6 +137,11 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /** LinkIn */
+        LinkIn: {
+            /** Url */
+            url: string;
+        };
         /**
          * ProjectOut
          * @description Espejo tipado de `core.Analysis` para que OpenAPI (y por tanto
@@ -147,6 +172,8 @@ export interface components {
              * @default 0
              */
             size_bytes: number;
+            /** Source Url */
+            source_url?: string | null;
             /** Filename */
             filename: string;
             /**
@@ -206,12 +233,14 @@ export interface components {
              * @default 0
              */
             size_bytes: number;
+            /** Source Url */
+            source_url?: string | null;
         };
         /**
          * Status
          * @enum {string}
          */
-        Status: "queued" | "processing" | "done" | "error";
+        Status: "downloading" | "queued" | "processing" | "done" | "error";
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -301,6 +330,45 @@ export interface operations {
         requestBody: {
             content: {
                 "multipart/form-data": components["schemas"]["Body_create_project_projects_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_project_from_youtube_projects_youtube_post: {
+        parameters: {
+            query?: {
+                model?: string;
+                with_chords?: boolean;
+                large_vocabulary?: boolean;
+            };
+            header?: {
+                "x-mewsplit-token"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkIn"];
             };
         };
         responses: {

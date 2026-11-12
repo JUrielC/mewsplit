@@ -103,14 +103,25 @@ export function listProjects(): Promise<ProjectSummary[]> {
 export function createProject(file: File, options: AnalysisOptions = {}): Promise<Project> {
   const body = new FormData();
   body.append("file", file);
+  return request<Project>(`/projects${analysisQuery(options)}`, { method: "POST", body });
+}
 
+/** Crea el proyecto desde un enlace de YouTube; descarga y análisis siguen en segundo plano. */
+export function createProjectFromYoutube(url: string, options: AnalysisOptions = {}): Promise<Project> {
+  return request<Project>(`/projects/youtube${analysisQuery(options)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+}
+
+function analysisQuery(options: AnalysisOptions): string {
   const params = new URLSearchParams();
   if (options.sixStems) params.set("model", "htdemucs_6s.yaml");
   if (options.withChords === false) params.set("with_chords", "false");
   if (options.largeVocabulary === false) params.set("large_vocabulary", "false");
   const query = params.toString();
-
-  return request<Project>(`/projects${query ? `?${query}` : ""}`, { method: "POST", body });
+  return query ? `?${query}` : "";
 }
 
 export function getProject(id: string): Promise<Project> {

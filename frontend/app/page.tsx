@@ -4,6 +4,7 @@ import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState }
 
 import {
   createProject,
+  createProjectFromYoutube,
   deleteProject,
   getProject,
   keepAlive,
@@ -11,28 +12,30 @@ import {
   type Project,
   type ProjectSummary,
 } from "@/lib/api";
-import { DropZone } from "@/components/DropZone";
-import { ProjectsPanel } from "@/components/ProjectsPanel";
+import { ProjectsScreen } from "@/components/ProjectsScreen";
 import { Studio } from "@/components/Studio";
 import { TuningNotice } from "@/components/TuningNotice";
 import styles from "@/components/projects.module.css";
+import { isUnfinished, stageText } from "@/lib/projects";
 import { formatCents, isDetuned, referencePitch } from "@/lib/tuning";
 
 /** Preferencias del usuario, no datos: sobreviven a cerrar la app. */
 const LAST_PROJECT = "mewsplit.lastProject";
-const PANEL_COLLAPSED = "mewsplit.panelCollapsed";
 const SIX_STEMS = "mewsplit.sixStems";
 /** Proyectos cuyo aviso de afinación ya se leyó, separados por comas. */
 const TUNING_SEEN = "mewsplit.tuningSeen";
 
-/** Mientras algo se analiza, la lista se refresca para mostrar el avance. */
+/** Mientras algo se descarga o se analiza, la lista se refresca para mostrar el avance. */
 const POLL_MS = 1000;
+
+/** Lo que se puede soltar sobre la ventana: un audio o un enlace arrastrado desde el navegador. */
+const DROPPABLE = ["Files", "text/uri-list"];
 
 export default function Page() {
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // null es la pantalla de proyectos.
+  const [openId, setOpenId] = useState<string | null>(null);
   const [project, setProject] = useState<Project | null>(null);
-  const [collapsed, setCollapsed] = useState(false);
   const [sixStems, setSixStems] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +46,6 @@ export default function Page() {
   // Después de montar y no en el estado inicial: la build estática prerenderiza
   // la página sin localStorage, y leerlo antes haría que el HTML no coincida.
   useEffect(() => {
-    setCollapsed(readFlag(PANEL_COLLAPSED));
     setSixStems(readFlag(SIX_STEMS));
     setTuningSeen(readString(TUNING_SEEN)?.split(",").filter(Boolean) ?? []);
   }, []);
@@ -54,76 +56,75 @@ export default function Page() {
     return list;
   }, []);
 
-  // Al abrir: el último proyecto que se usó, o el más nuevo.
+  // Al abrir, vuelve donde se dejó: el proyecto abierto o la pantalla de proyectos.
   useEffect(() => {
     refresh()
       .then((list) => {
         const last = readString(LAST_PROJECT);
-        setSelectedId(list.find((p) => p.id === last)?.id ?? list[0]?.id ?? null);
+        setOpenId(list.find((p) => p.id === last)?.id ?? null);
       })
       .catch((e) => setError(message(e)));
   }, [refresh]);
 
-  const analyzing = projects?.some((p) => p.status === "queued" || p.status === "processing");
+  const working = projects?.some(isUnfinished);
   useEffect(() => {
-    if (!analyzing) return;
+    if (!working) return;
     const id = setInterval(() => refresh().catch(() => {}), POLL_MS);
     return () => clearInterval(id);
-  }, [analyzing, refresh]);
+  }, [working, refresh]);
 
-  const selected = useMemo(
-    () => projects?.find((p) => p.id === selectedId) ?? null,
-    [projects, selectedId],
+  const opened = useMemo(
+    () => projects?.find((p) => p.id === openId) ?? null,
+    [projects, openId],
   );
 
   // El detalle (acordes, stems) se pide una sola vez, cuando el proyecto está
   // listo. Pedirlo en cada sondeo daría un objeto nuevo cada segundo y Studio
   // volvería a cargar los stems.
-  const selectedStatus = selected?.status;
+  const openedStatus = opened?.status;
   useEffect(() => {
     setProject(null);
-    if (!selectedId || selectedStatus !== "done") return;
+    if (!openId || openedStatus !== "done") return;
     let alive = true;
-    getProject(selectedId)
+    getProject(openId)
       .then((detail) => alive && setProject(detail))
       .catch((e) => alive && setError(message(e)));
     return () => {
       alive = false;
     };
-  }, [selectedId, selectedStatus]);
+  }, [openId, openedStatus]);
 
-  function select(id: string | null) {
-    setSelectedId(id);
+  function open(id: string | null) {
+    setError(null);
+    setOpenId(id);
     writeString(LAST_PROJECT, id);
   }
 
-  async function create(file: File, six = sixStems) {
+  /** Crea el proyecto y lo abre. Devuelve si se creó. */
+  async function start(request: () => Promise<Project>): Promise<boolean> {
     setError(null);
     try {
-      const created = await createProject(file, { sixStems: six });
+      const created = await request();
       await refresh();
-      select(created.id);
+      open(created.id);
+      return true;
     } catch (e) {
       setError(message(e));
+      return false;
     }
   }
+
+  const fromFile = (file: File) => start(() => createProject(file, { sixStems }));
+  const fromLink = (url: string) => start(() => createProjectFromYoutube(url, { sixStems }));
 
   async function remove(id: string) {
     setError(null);
     try {
       await deleteProject(id);
-      const list = await refresh();
-      if (id === selectedId) select(list[0]?.id ?? null);
+      await refresh();
     } catch (e) {
       setError(message(e));
     }
-  }
-
-  function toggleCollapsed() {
-    setCollapsed((value) => {
-      writeFlag(PANEL_COLLAPSED, !value);
-      return !value;
-    });
   }
 
   function dismissTuning(id: string) {
@@ -139,11 +140,13 @@ export default function Page() {
     writeFlag(SIX_STEMS, value);
   }
 
-  // Soltar un audio en cualquier parte de la ventana crea un proyecto.
+  // Soltar un audio o un enlace en cualquier parte de la ventana crea un proyecto.
+  // Texto suelto no cuenta: arrastrarlo dentro del campo del enlace es editarlo.
   const dragDepth = useRef(0);
+  const droppable = (e: React.DragEvent) => e.dataTransfer.types.some((type) => DROPPABLE.includes(type));
   const dropHandlers = {
     onDragEnter: (e: React.DragEvent) => {
-      if (!e.dataTransfer.types.includes("Files")) return;
+      if (!droppable(e)) return;
       dragDepth.current += 1;
       setDragging(true);
     },
@@ -151,109 +154,120 @@ export default function Page() {
       dragDepth.current = Math.max(0, dragDepth.current - 1);
       if (dragDepth.current === 0) setDragging(false);
     },
-    onDragOver: (e: React.DragEvent) => e.preventDefault(),
+    onDragOver: (e: React.DragEvent) => {
+      if (droppable(e)) e.preventDefault();
+    },
     onDrop: (e: React.DragEvent) => {
+      if (!droppable(e)) return;
       e.preventDefault();
       dragDepth.current = 0;
       setDragging(false);
       const file = e.dataTransfer.files?.[0];
-      if (file) void create(file);
+      if (file) {
+        void fromFile(file);
+        return;
+      }
+      const link = droppedLink(e.dataTransfer);
+      if (link) void fromLink(link);
     },
   };
 
   return (
-    <div className={styles.app} {...dropHandlers}>
-      <ProjectsPanel
-        projects={projects ?? []}
-        selectedId={selectedId}
-        sixStems={sixStems}
-        collapsed={collapsed}
-        onSixStems={chooseSixStems}
-        onSelect={select}
-        onCreate={(file) => void create(file)}
-        onDelete={(id) => void remove(id)}
-        onToggle={toggleCollapsed}
-      />
-
-      <main className="workspace">
-        <header className="header">
-          {/* El nombre abre y cierra el panel de proyectos: ya no hay pantalla
-              de inicio a la que volver, y así el panel oculto no ocupa ancho. */}
-          <button
-            type="button"
-            className="brand"
-            onClick={toggleCollapsed}
-            title={collapsed ? "Mostrar proyectos" : "Ocultar proyectos"}
-            aria-expanded={!collapsed}
-          >
-            mewsplit
-          </button>
-          {project && isDetuned(project.tuning_cents) && tuningSeen.includes(project.id) && (
-            <span
-              className={`label ${styles.tuningNotice}`}
-              title={`Esta grabación no está afinada a La 440: está ${formatCents(
-                project.tuning_cents,
-              )} ${project.tuning_cents > 0 ? "más aguda" : "más grave"}. Los acordes ya lo tienen en cuenta. Para tocar encima, afina tu instrumento a La = ${referencePitch(
-                project.tuning_cents,
-              ).toFixed(1)} Hz.`}
-            >
-              grabación desafinada {formatCents(project.tuning_cents)} · afina a La ={" "}
-              {referencePitch(project.tuning_cents).toFixed(1)} Hz
-            </span>
+    <main className="workspace" {...dropHandlers}>
+      <header className="header">
+        <nav className={styles.crumbs}>
+          {opened ? (
+            <button type="button" className="brand" onClick={() => open(null)} title="Volver a proyectos">
+              mewsplit
+            </button>
+          ) : (
+            <span className="brand">mewsplit</span>
           )}
-          <span className="data">
-            {error ? <span className="active">error: {error}</span> : null}
-            {!error && project?.duration ? `${project.duration.toFixed(1)}s` : ""}
-            {!error && project?.device ? ` · ${project.device}` : ""}
+          <span className={styles.trail}>
+            {opened ? (
+              <>
+                <button type="button" className="label" onClick={() => open(null)}>
+                  proyectos
+                </button>
+                <span className="label">/</span>
+                <span className={styles.current} title={opened.name}>
+                  {opened.name}
+                </span>
+              </>
+            ) : (
+              <span className={`label ${styles.here}`}>proyectos</span>
+            )}
           </span>
-        </header>
+        </nav>
+        {project && isDetuned(project.tuning_cents) && tuningSeen.includes(project.id) && (
+          <span
+            className={`label ${styles.tuningNotice}`}
+            title={`Esta grabación no está afinada a La 440: está ${formatCents(
+              project.tuning_cents,
+            )} ${project.tuning_cents > 0 ? "más aguda" : "más grave"}. Los acordes ya lo tienen en cuenta. Para tocar encima, afina tu instrumento a La = ${referencePitch(
+              project.tuning_cents,
+            ).toFixed(1)} Hz.`}
+          >
+            grabación desafinada {formatCents(project.tuning_cents)} · afina a La ={" "}
+            {referencePitch(project.tuning_cents).toFixed(1)} Hz
+          </span>
+        )}
+        <span className="data">
+          {error ? <span className="active">error: {error}</span> : null}
+          {!error && project?.duration ? `${project.duration.toFixed(1)}s` : ""}
+          {!error && project?.device ? ` · ${project.device}` : ""}
+        </span>
+      </header>
 
-        {project?.id === selectedId &&
-          project.status === "done" &&
-          isDetuned(project.tuning_cents) &&
-          !tuningSeen.includes(project.id) && (
-            <TuningNotice cents={project.tuning_cents} onDismiss={() => dismissTuning(project.id)} />
-          )}
+      {project?.id === openId &&
+        project.status === "done" &&
+        isDetuned(project.tuning_cents) &&
+        !tuningSeen.includes(project.id) && (
+          <TuningNotice cents={project.tuning_cents} onDismiss={() => dismissTuning(project.id)} />
+        )}
 
-        {content()}
-      </main>
+      {content()}
 
-      {dragging && <div className={styles.dropHint}>suelta el audio para crear un proyecto</div>}
-    </div>
+      {dragging && (
+        <div className={styles.dropHint}>suelta el audio o el enlace para crear un proyecto</div>
+      )}
+    </main>
   );
 
   function content() {
     if (projects === null) return null;
 
-    if (!selected) {
+    if (!opened) {
       return (
-        <DropZone
-          onFile={(file, six) => void create(file, six)}
+        <ProjectsScreen
+          projects={projects}
           sixStems={sixStems}
           onSixStems={chooseSixStems}
+          onOpen={open}
+          onFile={(file) => void fromFile(file)}
+          onLink={fromLink}
+          onDelete={(id) => void remove(id)}
         />
       );
     }
 
-    if (selected.status === "error") {
+    if (opened.status === "error") {
       return (
         <div className={styles.status}>
-          <span className="label">{selected.name}</span>
-          <span className="label">{selected.error ?? "el análisis falló"}</span>
-          <span className="label">puedes eliminarlo desde la lista y volver a crearlo</span>
+          <span className="label">{opened.error ?? "el análisis falló"}</span>
+          <span className="label">puedes eliminarlo desde proyectos y volver a crearlo</span>
         </div>
       );
     }
 
-    if (selected.status !== "done") {
+    if (opened.status !== "done") {
       return (
         <div className={styles.status}>
-          <span className="label">{selected.name}</span>
-          <span className="label">{progressText(selected)}</span>
+          <span className="label">{stageText(opened)}</span>
           <div className={styles.progressTrack}>
             <div
               className={styles.progressFill}
-              style={{ "--progress-width": `${Math.round(selected.progress * 100)}%` } as CSSProperties}
+              style={{ "--progress-width": `${Math.round(opened.progress * 100)}%` } as CSSProperties}
             />
           </div>
         </div>
@@ -262,15 +276,17 @@ export default function Page() {
 
     // key: cada proyecto tiene su propio mezclador; cambiar de proyecto lo
     // desmonta y libera el anterior.
-    return project?.id === selected.id ? <Studio key={project.id} job={project} /> : null;
+    return project?.id === opened.id ? <Studio key={project.id} job={project} /> : null;
   }
 }
 
-function progressText(project: ProjectSummary): string {
-  if (project.status === "queued") return "en cola…";
-  // El avance mide la separación; al llegar al 100% aún se guardan los stems.
-  if (project.progress >= 1) return "guardando el proyecto…";
-  return `separando… ${Math.round(project.progress * 100)}%`;
+/** El primer enlace de lo soltado; en text/uri-list las líneas con # son comentarios. */
+function droppedLink(data: DataTransfer): string | null {
+  const link = data
+    .getData("text/uri-list")
+    .split(/\r?\n/)
+    .find((line) => line.trim() && !line.startsWith("#"));
+  return link?.trim() || null;
 }
 
 function message(e: unknown): string {

@@ -27,6 +27,10 @@ dependencies = [
   "fastapi==0.141.1",
   "uvicorn[standard]==0.52.4",
   "python-multipart==0.0.32",
+  # Sin techo, a diferencia del resto: YouTube cambia a menudo y una versión
+  # fija deja de descargar en semanas. `deno` resuelve el reto de JavaScript
+  # que YouTube exige, sin Homebrew.
+  "yt-dlp[default,deno]>=2026.10.26",
 ]
 
 [project.optional-dependencies]

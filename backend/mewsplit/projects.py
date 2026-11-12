@@ -37,7 +37,7 @@ PROJECTS_DIR = Path(
 
 # Estados que solo tienen sentido mientras el proceso sigue vivo: si aparecen
 # al arrancar, el análisis se cortó (se cerró la app a mitad).
-UNFINISHED = {"queued", "processing"}
+UNFINISHED = {"downloading", "queued", "processing"}
 INTERRUPTED = "El análisis se interrumpió: se cerró mewsplit antes de terminar."
 
 
@@ -57,6 +57,8 @@ class Project:
     tuning_cents: float | None = None
     timings: dict[str, float] = field(default_factory=dict)
     stems: list[str] = field(default_factory=list)
+    # El enlace de YouTube del que salió el audio; None si se subió un archivo.
+    source_url: str | None = None
 
 
 def project_dir(project_id: str) -> Path:

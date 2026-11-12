@@ -70,10 +70,15 @@ instalador en tu propia Mac, así que se abre sin avisos.
 
 - Cada canción que subes queda guardada como proyecto, con sus stems y sus
   acordes: al volver a abrir mewsplit sigue ahí, sin separarla otra vez.
-- Un panel lateral lista los proyectos; **+ nuevo** o arrastrar un audio a la
-  ventana crea uno, y se puede cambiar de proyecto mientras otro se analiza.
-- Eliminar un proyecto borra sus archivos. El panel se puede ocultar para
-  dejar todo el ancho a la línea de tiempo.
+- La pantalla de **proyectos** los lista con su duración, origen, fecha y lo
+  que ocupan. Desde ahí se crea uno nuevo: eligiendo un audio, arrastrándolo a
+  la ventana o pegando un **enlace de YouTube**. Se puede abrir un proyecto
+  mientras otro se descarga o se analiza.
+- Con un enlace de YouTube, mewsplit descarga el audio (Opus, tal como lo sirve
+  YouTube, sin recodificar) y lo trata como un archivo subido. Vale cualquier
+  forma del enlace: `youtu.be`, `watch?v=`, Shorts, YouTube Music, o el de un
+  video dentro de una lista.
+- Eliminar un proyecto borra sus archivos.
 - Los stems se guardan en FLAC (sin pérdida): unos 100–170 MB por canción.
 
 ### Separación de pistas
@@ -85,7 +90,7 @@ instalador en tu propia Mac, así que se abre sin avisos.
 - Un **instrumental** (todo menos la voz) se genera automáticamente.
 - Barra de progreso real durante la separación. Una canción de 3:39 tarda
   unos 32 s en un MacBook M3, sin GPU dedicada.
-- Formatos de entrada: WAV, MP3, FLAC, AIFF, M4A y OGG.
+- Formatos de entrada: WAV, MP3, FLAC, AIFF, M4A y OGG, o un enlace de YouTube.
 
 ### Acordes
 
@@ -216,6 +221,7 @@ backend/mewsplit/core.py         orquestación pura: recibe rutas, devuelve dato
 backend/mewsplit/separation.py   Demucs vía audio-separator
 backend/mewsplit/chords.py       BTC + decodificación propia de acordes
 backend/mewsplit/api.py          FastAPI: trabajos en segundo plano, token, puerto
+backend/mewsplit/youtube.py      el audio de un enlace de YouTube, vía yt-dlp
 backend/mewsplit/app.py          el comando `mewsplit`: API + interfaz + ventana
 native/macos/main.swift          la ventana nativa: lanza el servidor y muestra la interfaz
 backend/cli.py                   la misma lógica desde la terminal
@@ -350,7 +356,8 @@ hace bajo su propia responsabilidad, y el autor no responde por daños
 derivados de su uso. En particular:
 
 - **Los derechos del audio que proceses son tu responsabilidad.** Separar una
-  canción no te da derechos sobre ella ni sobre sus stems.
+  canción no te da derechos sobre ella ni sobre sus stems. Descargar de YouTube
+  puede ir contra sus condiciones de uso: es tu decisión y tu responsabilidad.
 - **Los modelos tienen sus propias licencias**, que se detallan a
   continuación. mewsplit no los incluye: los descarga cada usuario al usarlo.
 - Los acordes y los stems son estimaciones automáticas y pueden contener
@@ -388,6 +395,11 @@ modificar y bajo su propia licencia.
 
 La separación usa **Demucs v4** (Alexandre Défossez et al.) vía
 [audio-separator](https://github.com/nomadkaraoke/python-audio-separator).
+
+Los enlaces de YouTube se descargan con
+[yt-dlp](https://github.com/yt-dlp/yt-dlp) (Unlicense), que resuelve el reto
+de JavaScript de YouTube con [Deno](https://deno.com) (MIT). Los dos se
+instalan como dependencias; mewsplit no los modifica.
 
 Las mediciones de acordes usan **GuitarSet** (Xi et al., ISMIR 2018, CC BY
 4.0) y las anotaciones de **McGill Billboard** (Burgoyne et al., ISMIR 2011,

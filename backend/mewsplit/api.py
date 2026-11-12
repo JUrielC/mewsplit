@@ -11,6 +11,7 @@ sidecar) y a web (remoto). El frontend solo cambia la URL base.
 from __future__ import annotations
 
 import os
+import re
 import secrets
 import shutil
 import tempfile
@@ -26,7 +27,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from mewsplit import projects
+from mewsplit import projects, youtube
 from mewsplit.core import DEFAULT_MODEL, SIX_STEM_MODEL, Chord, analyze, get_device
 from mewsplit.projects import Project
 
@@ -87,6 +88,7 @@ EXTENSIONS = {".wav", ".mp3", ".flac", ".aiff", ".aif", ".m4a", ".ogg"}
 
 
 class Status(str, Enum):
+    DOWNLOADING = "downloading"
     QUEUED = "queued"
     PROCESSING = "processing"
     DONE = "done"
@@ -106,13 +108,19 @@ class ProjectSummary(BaseModel):
     name: str
     status: Status
     created_at: str
-    # Avance de la separación, no del trabajo entero: los acordes terminan en
-    # ~2s y marcarlos aquí dejaría la barra al 100% durante toda la separación.
+    # Avance de la etapa que dice `status`: la descarga mientras es
+    # "downloading" y la separación después. Nunca el de los acordes: terminan
+    # en ~2s y dejarían la barra al 100% durante toda la separación.
     progress: float = 0.0
     error: str | None = None
     duration: float | None = None
     model: str | None = None
     size_bytes: int = 0
+    source_url: str | None = None
+
+
+class LinkIn(BaseModel):
+    url: str
 
 
 class ProjectOut(ProjectSummary):
@@ -219,6 +227,7 @@ def _summary(job: Job) -> ProjectSummary:
         duration=project.duration,
         model=project.model,
         size_bytes=projects.size_bytes(project.id) if project.status == "done" else 0,
+        source_url=project.source_url,
     )
 
 
@@ -235,6 +244,53 @@ def _serialize(job: Job) -> ProjectOut:
         tuning_cents=project.tuning_cents,
         timings=project.timings,
     )
+
+
+class _Deleted(Exception):
+    pass
+
+
+def _process_link(
+    job: Job, video: str, model: str, with_chords: bool, large_vocabulary: bool
+) -> None:
+    # La descarga no espera turno: solo la separación ocupa la GPU.
+    if _fetch(job, video):
+        _process(job, model, with_chords, large_vocabulary)
+
+
+def _fetch(job: Job, video: str) -> bool:
+    """Trae el audio del video al proyecto. Devuelve si quedó algo que analizar."""
+    project = job.project
+    work = JOBS_DIR / project.id / "download"
+
+    def on_title(title: str) -> None:
+        project.name = title
+        projects.save(project)
+
+    def on_progress(progress: float) -> None:
+        if job.deleted:
+            raise _Deleted
+        job.progress = progress
+
+    try:
+        audio = youtube.download(video, work, on_title=on_title, on_progress=on_progress)
+        # El nombre de archivo da nombre a la mezcla exportada: sin barras ni dos puntos.
+        safe = re.sub(r'[\\/:*?"<>|]+', " ", project.name).strip() or video
+        project.filename = f"{safe}{audio.suffix}"
+        shutil.move(audio, projects.original_path(project))
+        project.status = Status.QUEUED.value
+    except Exception as e:
+        project.status = Status.ERROR.value
+        project.error = str(e)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+        job.progress = 0.0
+
+    if job.deleted:
+        projects.delete(project.id)
+        return False
+    projects.save(project)
+    return project.status == Status.QUEUED.value
 
 
 def _process(job: Job, model: str, with_chords: bool, large_vocabulary: bool) -> None:
@@ -354,6 +410,46 @@ async def create_project(
         _jobs[project.id] = job
 
     tasks.add_task(_process, job, model, with_chords, large_vocabulary)
+    return _serialize(job)
+
+
+@app.post(
+    "/projects/youtube",
+    response_model=ProjectOut,
+    status_code=202,
+    dependencies=[Depends(verify_token)],
+)
+def create_project_from_youtube(
+    link: LinkIn,
+    tasks: BackgroundTasks,
+    model: str = DEFAULT_MODEL,
+    with_chords: bool = True,
+    large_vocabulary: bool = True,
+) -> ProjectOut:
+    """Como subir un archivo, pero el audio se descarga en segundo plano."""
+    try:
+        video = youtube.video_id(link.url)
+    except youtube.InvalidLink as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+    url = youtube.watch_url(video)
+    project = Project(
+        id=uuid.uuid4().hex,
+        # Hasta que llega el título del video, unos segundos después.
+        name=f"youtu.be/{video}",
+        filename="",
+        created_at=datetime.now().isoformat(timespec="seconds"),
+        status=Status.DOWNLOADING.value,
+        source_url=url,
+    )
+    projects.save(project)
+
+    job = Job(project=project)
+    _registry()
+    with _lock:
+        _jobs[project.id] = job
+
+    tasks.add_task(_process_link, job, video, model, with_chords, large_vocabulary)
     return _serialize(job)
 
 
