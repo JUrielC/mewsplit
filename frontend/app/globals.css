@@ -1,33 +1,50 @@
 /*
- * Minimalismo editorial en modo oscuro.
- * Referencias: Teenage Engineering, Dieter Rams, vista de arreglo de Ableton.
+ * Diseño de la pantalla "Añadir una canción" de la maqueta Atril
+ * (design/propuestas-app/2-atril.html), extendido a toda la app.
  *
- * Reglas que no se negocian:
- * - Cero esquinas redondeadas, sombras, gradientes, glow o neón.
- * - Sin cajas: la separación son líneas de 0.5px.
- * - El acento SOLO indica estado. Si hay varios elementos encendidos a la
- *   vez, es un bug.
- * - La jerarquía viene del espaciado, no del tamaño ni del peso.
+ * Reglas:
+ * - Un marco oscuro con la barra superior y, encima, la hoja: un solo panel
+ *   redondeado con borde donde vive el contenido. Dentro, tarjetas con borde
+ *   solo cuando agrupan algo (el tablero del estudio, los avisos).
+ * - Textos con mayúscula inicial. Dos tonos: --text y --muted.
+ * - Un solo color, --hue (verde azulado), y solo en los datos: el avance, el
+ *   playhead, el acorde que suena y el solo. Las opciones elegidas son un
+ *   relleno gris, sin subrayado: lo único subrayado sería el logo, y en la
+ *   captura tampoco lo está. --negative, solo para errores y para borrar.
+ * - Una sola acción principal por pantalla, rellena de blanco.
+ * - Sin sombras, degradados, glow ni neón.
  * - Ancho completo: en una herramienta multipista el ancho horizontal ES la
  *   resolución temporal. Nada de max-width de contenedor de lectura.
  */
 
 :root {
-  --bg-app: #101114;
-  --bg-hover: #16181d;
-  --bg-active: #1d1f26;
+  --frame: #0e1112;
+  --sheet: #161a1b;
+  --raised: #1e2324;
+  --active: #232a2b;
+  --border: #263031;
+  --rule: #1f2627;
+  --control: #3f4b4c;
 
-  --line: rgba(255, 255, 255, 0.12);
-  --line-faint: rgba(255, 255, 255, 0.06);
+  /* Blanco mate: el #edf1f1 de la maqueta deslumbraba sobre el fondo oscuro. */
+  --text: #d3d9d9;
+  --muted: #9ba7a8;
+  --wave: #8a999a;
 
-  --text: #e2e2e5;
-  --text-soft: #a8acb6;
-  --text-dim: #747a88;
+  --hue: #5eb7cb;
+  --hue-soft: rgba(94, 183, 203, 0.13);
+  --negative: #f07070;
 
-  --accent: #ff4d00;
+  --radius-sheet: 16px;
+  --radius-card: 8px;
+  --radius-control: 6px;
 
   --step: 8px;
-  --tracking: 0.14em;
+
+  /* Barras de desplazamiento y controles nativos oscuros: en WebView2 salían
+     claros sobre el fondo de la app. */
+  color-scheme: dark;
+  scrollbar-color: var(--control) transparent;
 }
 
 *,
@@ -36,85 +53,299 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-  border-radius: 0;
-  box-shadow: none;
-  text-shadow: none;
-  -webkit-font-smoothing: antialiased;
 }
 
 html,
 body {
   height: 100%;
-  background: var(--bg-app);
+  background: var(--frame);
   color: var(--text);
-  font-family: var(--font-sans);
-  font-size: 13px;
+  font: 14px/20px var(--font-sans);
   overflow: hidden;
 }
 
-button {
+h1,
+h2,
+h3 {
+  font: inherit;
+}
+
+button,
+input {
   font: inherit;
   color: inherit;
+}
+
+button {
   background: none;
   border: none;
   cursor: pointer;
 }
 
-/* Etiquetas: sans, versalitas espaciadas. */
+:focus-visible {
+  outline: 2px solid var(--hue);
+  outline-offset: 2px;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--step);
+  height: 32px;
+  padding: 0 12px;
+  background: var(--sheet);
+  border: 1px solid var(--control);
+  border-radius: var(--radius-control);
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background-color 90ms linear,
+    transform 90ms linear;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--raised);
+}
+
+.button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* La acción principal de cada pantalla: la única rellena de blanco. */
+.button.primary {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--frame);
+}
+
+.button.primary:hover:not(:disabled) {
+  background: var(--text);
+  opacity: 0.88;
+}
+
+.button.ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
+.button.danger {
+  background: transparent;
+  border-color: var(--negative);
+  color: var(--negative);
+}
+
+/* Cuadrado para un solo signo: S, M, −, +. Pulsado, relleno de blanco. */
+.button.square {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font: 500 12px var(--font-mono);
+}
+
+.button.square[aria-pressed="true"] {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--sheet);
+}
+
+/* Opciones excluyentes: un riel con borde y la elegida en relleno gris. */
+.segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  flex: none;
+  max-width: 100%;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--control);
+  border-radius: var(--radius-control);
+}
+
+.segmented > .button {
+  height: 26px;
+  padding: 0 10px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.segmented > .button:hover:not(:disabled) {
+  background: transparent;
+  color: var(--text);
+}
+
+.segmented > .button[aria-pressed="true"],
+.segmented > .button[aria-pressed="true"]:hover:not(:disabled) {
+  background: var(--active);
+  color: var(--text);
+}
+
+.field {
+  height: 32px;
+  padding: 0 12px;
+  background: var(--sheet);
+  border: 1px solid var(--control);
+  border-radius: var(--radius-control);
+  outline: none;
+}
+
+.field::placeholder {
+  color: var(--muted);
+}
+
+.field:focus {
+  border-color: var(--hue);
+}
+
 .label {
-  font-size: 12px;
-  letter-spacing: var(--tracking);
-  text-transform: lowercase;
-  color: var(--text-soft);
+  font-size: 13px;
+  color: var(--muted);
 }
 
 /* Datos (tiempos, dB, acordes): siempre monoespaciada. */
 .data {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 
-.active {
-  color: var(--accent);
+.muted {
+  color: var(--muted);
 }
 
-.rule {
-  border: none;
-  border-top: 0.5px solid var(--line);
+.error {
+  color: var(--negative);
 }
 
-.rule-faint {
-  border: none;
-  border-top: 0.5px solid var(--line-faint);
+/* Etiqueta pequeña con relleno: "6 stems", el nombre de una pista. */
+.chip {
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 4px;
+  background: var(--raised);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 22px;
+  white-space: nowrap;
 }
 
-.workspace {
-  display: flex;
-  flex-direction: column;
+/* Avisos (versión nueva, afinación): una tarjeta discreta, en el tono
+   apagado, que no compite con el contenido. */
+.alert {
+  flex: none;
+  padding: 12px 14px;
+  background: var(--sheet);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.alert strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.alert .button {
+  height: 28px;
+  font-size: 13px;
+}
+
+/* Marco: la barra superior y, debajo, la hoja con el contenido. */
+.frame {
+  display: grid;
+  grid-template-rows: 48px minmax(0, 1fr);
   height: 100vh;
   width: 100%;
-  padding: calc(var(--step) * 2) calc(var(--step) * 5);
-  gap: calc(var(--step) * 2);
 }
 
-.header {
+.top {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  padding-bottom: var(--step);
-  border-bottom: 0.5px solid var(--line);
+  gap: calc(var(--step) * 3);
+  min-width: 0;
+  padding: 0 16px 0 20px;
 }
 
 .brand {
-  font-size: 17px;
-  letter-spacing: 0.18em;
-  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 600;
 }
 
-/* El eje temporal es compartido por regla, formas de onda y acordes.
-   Cualquier desalineación entre ellos se lee como un bug de sincronía. */
-.axis {
+.brand svg {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--step) * 2);
+  min-width: 0;
+}
+
+.sheet {
   position: relative;
-  width: 100%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  margin: 0 8px 8px;
+  background: var(--sheet);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sheet);
+  overflow: hidden;
+}
+
+/* Cabecera de la hoja en el estudio: "Repertorio / canción" y sus datos. */
+.sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  min-width: 0;
+  padding: 16px 24px 0;
+}
+
+.sheet-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  padding: 16px 24px 20px;
+  overflow: auto;
+}
+
+@media (max-width: 760px) {
+  .sheet {
+    margin: 0;
+    border-width: 1px 0 0;
+    border-radius: 0;
+  }
+
+  .top {
+    padding: 0 12px 0 16px;
+  }
+
+  .sheet-head {
+    padding: 12px 16px 0;
+  }
+
+  .sheet-body {
+    padding: 12px 16px 16px;
+  }
 }

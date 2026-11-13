@@ -14,20 +14,21 @@ export function ZoomControl({ zoom, onZoom }: Props) {
   const index = ZOOM_LEVELS.indexOf(zoom);
 
   return (
-    <div className={styles.zoom}>
+    <div className={styles.stepper}>
+      <span className="label">Zoom</span>
       <button
         type="button"
-        className="label"
+        className="button square"
         disabled={index <= 0}
         onClick={() => onZoom(ZOOM_LEVELS[index - 1])}
         aria-label="Alejar"
       >
         −
       </button>
-      <span className="data">{zoom}×</span>
+      <span className={`data ${styles.stepperValue}`}>{zoom}×</span>
       <button
         type="button"
-        className="label"
+        className="button square"
         disabled={index >= ZOOM_LEVELS.length - 1}
         onClick={() => onZoom(ZOOM_LEVELS[index + 1])}
         aria-label="Acercar"

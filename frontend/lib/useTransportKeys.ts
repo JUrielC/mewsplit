@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useEffectEvent } from "react";
 
 /** Desplazamiento por pulsación. Con Shift, el salto largo. */
 const NUDGE = 1;
@@ -66,13 +66,17 @@ interface Options {
  * Atajos de transporte: espacio reproduce/pausa, flechas mueven el playhead,
  * 0-9 salta al 0%-90% de la duración.
  *
- * Se registra UN solo listener y los callbacks viajan por ref: `Studio` se
- * repinta en cada frame mientras suena, así que depender de ellos en el
- * useEffect suscribiría y desuscribiría 60 veces por segundo.
+ * Se registra UN solo listener y llama a los callbacks a través de
+ * useEffectEvent: `Studio` se repinta en cada frame mientras suena, así que
+ * depender de ellos en el useEffect suscribiría y desuscribiría 60 veces por
+ * segundo.
  */
 export function useTransportKeys({ onToggle, onNudge, onJump }: Options) {
-  const handlers = useRef({ onToggle, onNudge, onJump });
-  handlers.current = { onToggle, onNudge, onJump };
+  const run = useEffectEvent((shortcut: Shortcut) => {
+    if (shortcut.action === "toggle") onToggle();
+    else if (shortcut.action === "nudge") onNudge(shortcut.seconds);
+    else onJump(shortcut.fraction);
+  });
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
@@ -83,10 +87,7 @@ export function useTransportKeys({ onToggle, onNudge, onJump }: Options) {
       // espacio y las flechas, y evita que un botón con el foco se active,
       // que alternaría la reproducción dos veces.
       event.preventDefault();
-
-      if (shortcut.action === "toggle") handlers.current.onToggle();
-      else if (shortcut.action === "nudge") handlers.current.onNudge(shortcut.seconds);
-      else handlers.current.onJump(shortcut.fraction);
+      run(shortcut);
     }
 
     window.addEventListener("keydown", handleKey);

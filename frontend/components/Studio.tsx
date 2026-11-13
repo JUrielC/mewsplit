@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { downloadStem, type Project } from "@/lib/api";
 import { Mixer, peaks as computePeaks, type TrackState } from "@/lib/audio";
 import { simplifyChords, type ChordDetail } from "@/lib/chords";
+import { stemLabel, stemNames } from "@/lib/stems";
 import { useTransportKeys } from "@/lib/useTransportKeys";
 
 import { ChordDetailControl } from "./ChordDetailControl";
@@ -32,9 +33,6 @@ const DEFAULT_ZOOM = 32;
 /** Preferencia del usuario, no dato del trabajo: sobrevive a cambiar de canción. */
 const DETAIL_KEY = "mewsplit.chordDetail";
 
-/** Orden fijo de arriba abajo; los stems opcionales van al final. */
-const ORDER = ["vocals", "bass", "drums", "guitar", "other", "piano"];
-
 interface Props {
   job: Project;
 }
@@ -53,6 +51,8 @@ export function Studio({ job }: Props) {
   const [keepsPitch, setKeepsPitch] = useState(true);
   const [detail, setDetail] = useState<ChordDetail>(readDetail);
   const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(0);
+  const expected = stemNames(job.stems).length;
 
   useEffect(() => {
     const mixer = new Mixer();
@@ -65,12 +65,14 @@ export function Studio({ job }: Props) {
 
     (async () => {
       try {
-        const names = Object.keys(job.stems)
-          .filter((name) => name !== "instrumental")
-          .sort((a, b) => orderOf(a) - orderOf(b));
+        const names = stemNames(job.stems);
 
         const inputs = await Promise.all(
-          names.map(async (name) => ({ name, data: await downloadStem(job.id, name) })),
+          names.map(async (name) => {
+            const data = await downloadStem(job.id, name);
+            if (alive) setLoaded((count) => count + 1);
+            return { name, data };
+          }),
         );
         if (!alive) return;
 
@@ -117,9 +119,12 @@ export function Studio({ job }: Props) {
     [job.chords, detail],
   );
 
-  const currentChord = useMemo(() => {
-    return chords.find((c) => time >= c.start && time < c.end)?.chord ?? null;
-  }, [chords, time]);
+  const current = useMemo(() => chords.find((c) => time >= c.start && time < c.end) ?? null, [chords, time]);
+  // El siguiente con armonía: un hueco "N" en medio no es lo que se va a tocar.
+  const upcoming = useMemo(() => {
+    const after = current ? current.end : time;
+    return chords.find((c) => c.start >= after && c.chord !== "N") ?? null;
+  }, [chords, current, time]);
 
   function changeDetail(next: ChordDetail) {
     setDetail(next);
@@ -179,14 +184,20 @@ export function Studio({ job }: Props) {
   }, [saving, job, partial, audible]);
 
   const saveLabel = saving
-    ? "rendering…"
+    ? "Generando…"
     : partial
-      ? `save mix · ${audible.join(" + ")}`
-      : "save mix";
+      ? `Guardar mezcla · ${audible.map(stemLabel).join(" + ")}`
+      : "Guardar mezcla";
 
   if (error) {
-    return <p className="label">no se pudieron cargar los stems: {error}</p>;
+    return (
+      <div className={styles.loading}>
+        <span className="error">No se pudieron cargar las pistas: {error}</span>
+      </div>
+    );
   }
+
+  const ready = tracks.length > 0;
 
   const canvas = {
     "--zoom": zoom,
@@ -204,64 +215,84 @@ export function Studio({ job }: Props) {
           }
         />
         <div className={styles.toolbarRight}>
-          <ChordDetailControl detail={detail} onDetail={changeDetail} />
           <button
             type="button"
-            className={`label ${styles.saveMix}`}
+            className={`button ${styles.saveMix}`}
             onClick={saveMix}
-            disabled={saving || tracks.length === 0}
+            disabled={saving || !ready}
+            title="Descarga en WAV lo que suena ahora, a velocidad original"
           >
-            {saveLabel}
+            <span>{saveLabel}</span>
           </button>
           <ZoomControl zoom={zoom} onZoom={setZoom} />
         </div>
       </div>
 
-      <div className={styles.board}>
-        {/* Columna fija: el scroll horizontal no debe llevarse los controles. */}
-        <div className={styles.mixer}>
-          <div className={styles.chordSpacer} />
-          {tracks.map((track) => (
-            <TrackStrip
-              key={track.name}
-              track={track}
-              onVolume={(value) => withMixer((m) => m.setVolume(track.name, value))}
-              onMute={() => withMixer((m) => m.mute(track.name))}
-              onSolo={() => withMixer((m) => m.solo(track.name))}
-            />
-          ))}
-        </div>
-
-        {/* Un solo contenedor desplazable: acordes y ondas van sincronizados
-            porque comparten scroll, no porque nadie los sincronice. */}
-        <div className={styles.scroller} ref={scrollerRef}>
-          <div className={styles.canvas} style={canvas} onClick={seekFromClick}>
-            <ChordLane
-              chords={chords}
-              duration={duration}
-              time={time}
-              onSeek={(second) => withMixer((m) => m.seek(second))}
-            />
-
+      {ready ? (
+        <div className={styles.board}>
+          {/* Columna fija: el scroll horizontal no debe llevarse los controles. */}
+          <div className={styles.mixer}>
+            <div className={styles.chordHead}>
+              <span className={styles.laneName}>Acordes</span>
+              <ChordDetailControl detail={detail} onDetail={changeDetail} />
+            </div>
             {tracks.map((track) => (
-              <TrackWaveform
+              <TrackStrip
                 key={track.name}
-                peaks={waveforms[track.name] ?? null}
-                muted={!track.audible}
+                track={track}
+                onVolume={(value) => withMixer((m) => m.setVolume(track.name, value))}
+                onMute={() => withMixer((m) => m.mute(track.name))}
+                onSolo={() => withMixer((m) => m.solo(track.name))}
               />
             ))}
+          </div>
 
-            <div className={styles.playhead} />
+          {/* Un solo contenedor desplazable: acordes y ondas van sincronizados
+              porque comparten scroll, no porque nadie los sincronice. */}
+          <div className={styles.scroller} ref={scrollerRef}>
+            <div className={styles.canvas} style={canvas} onClick={seekFromClick}>
+              <ChordLane
+                chords={chords}
+                duration={duration}
+                time={time}
+                onSeek={(second) => withMixer((m) => m.seek(second))}
+              />
+
+              {tracks.map((track) => (
+                <TrackWaveform
+                  key={track.name}
+                  peaks={waveforms[track.name] ?? null}
+                  muted={!track.audible}
+                />
+              ))}
+
+              <div className={styles.playhead} />
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className={styles.loading} role="status">
+          <span className="label">
+            {loaded < expected ? `Cargando pistas · ${loaded} de ${expected}` : "Preparando el mezclador…"}
+          </span>
+          <div className={styles.loadingTrack}>
+            <div
+              className={styles.loadingFill}
+              style={{ "--progress-width": `${expected ? (loaded / expected) * 100 : 0}%` } as CSSProperties}
+            />
+          </div>
+        </div>
+      )}
 
       <Transport
+        ready={ready}
         playing={playing}
         time={time}
         duration={duration}
-        currentChord={currentChord}
+        currentChord={current?.chord ?? null}
+        nextChord={upcoming?.chord ?? null}
         onToggle={() => withMixer((m) => void m.toggle())}
+        onRestart={() => withMixer((m) => m.seek(0))}
         speed={speed}
         keepsPitch={keepsPitch}
         onSpeed={(value) =>
@@ -283,11 +314,6 @@ function readDetail(): ChordDetail {
   } catch {
     return "full";
   }
-}
-
-function orderOf(name: string): number {
-  const index = ORDER.indexOf(name);
-  return index === -1 ? ORDER.length : index;
 }
 
 function buildWaveforms(mixer: Mixer, names: string[]): Record<string, Float32Array> {

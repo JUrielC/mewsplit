@@ -37,7 +37,7 @@ export const TrackWaveform = memo(function TrackWaveform({ peaks, muted }: Props
         >
           <path
             d={path}
-            stroke="var(--text-dim)"
+            stroke="var(--wave)"
             strokeWidth={0.7}
             vectorEffect="non-scaling-stroke"
           />

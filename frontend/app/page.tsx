@@ -12,12 +12,15 @@ import {
   type Project,
   type ProjectSummary,
 } from "@/lib/api";
-import { ProjectsScreen } from "@/components/ProjectsScreen";
+import { LINK_FIELD_ID, ProjectsScreen } from "@/components/ProjectsScreen";
 import { Studio } from "@/components/Studio";
 import { TuningNotice } from "@/components/TuningNotice";
 import { UpdateNotice } from "@/components/UpdateNotice";
+import { AlertIcon, FileIcon, Logo } from "@/components/icons";
 import styles from "@/components/projects.module.css";
-import { isUnfinished, stageText } from "@/lib/projects";
+import { formatDuration, isUnfinished, stageText } from "@/lib/projects";
+import { stemNames } from "@/lib/stems";
+import { readString, useStoredString, writeString } from "@/lib/storage";
 import { formatCents, isDetuned, referencePitch } from "@/lib/tuning";
 
 /** Preferencias del usuario, no datos: sobreviven a cerrar la app. */
@@ -36,20 +39,17 @@ export default function Page() {
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   // null es la pantalla de proyectos.
   const [openId, setOpenId] = useState<string | null>(null);
-  const [project, setProject] = useState<Project | null>(null);
-  const [sixStems, setSixStems] = useState(false);
+  // La canción elegida en la biblioteca; al volver del estudio es la que estaba abierta.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState<Project | null>(null);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tuningSeen, setTuningSeen] = useState<string[]>([]);
+
+  const sixStems = useStoredString(SIX_STEMS) === "1";
+  const tuningSeenList = useStoredString(TUNING_SEEN);
+  const tuningSeen = useMemo(() => tuningSeenList?.split(",").filter(Boolean) ?? [], [tuningSeenList]);
 
   useEffect(() => keepAlive(), []);
-
-  // Después de montar y no en el estado inicial: la build estática prerenderiza
-  // la página sin localStorage, y leerlo antes haría que el HTML no coincida.
-  useEffect(() => {
-    setSixStems(readFlag(SIX_STEMS));
-    setTuningSeen(readString(TUNING_SEEN)?.split(",").filter(Boolean) ?? []);
-  }, []);
 
   const refresh = useCallback(async () => {
     const list = await listProjects();
@@ -59,13 +59,21 @@ export default function Page() {
 
   // Al abrir, vuelve donde se dejó: el proyecto abierto o la pantalla de proyectos.
   useEffect(() => {
-    refresh()
+    let alive = true;
+    listProjects()
       .then((list) => {
+        if (!alive) return;
+        setProjects(list);
         const last = readString(LAST_PROJECT);
-        setOpenId(list.find((p) => p.id === last)?.id ?? null);
+        const found = list.find((p) => p.id === last)?.id ?? null;
+        setOpenId(found);
+        setSelectedId(found);
       })
-      .catch((e) => setError(message(e)));
-  }, [refresh]);
+      .catch((e) => alive && setError(message(e)));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const working = projects?.some(isUnfinished);
   useEffect(() => {
@@ -79,25 +87,27 @@ export default function Page() {
     [projects, openId],
   );
 
-  // El detalle (acordes, stems) se pide una sola vez, cuando el proyecto está
-  // listo. Pedirlo en cada sondeo daría un objeto nuevo cada segundo y Studio
-  // volvería a cargar los stems.
-  const openedStatus = opened?.status;
+  // El detalle (acordes, stems) se pide una sola vez por proyecto, cuando está
+  // listo, y no al reabrirlo: un objeto nuevo haría que Studio volviera a
+  // cargar los stems. Un proyecto terminado ya no cambia.
+  const detailId = openId && opened?.status === "done" ? openId : null;
+  const project = loaded?.id === detailId ? loaded : null;
+  const loadedId = loaded?.id;
   useEffect(() => {
-    setProject(null);
-    if (!openId || openedStatus !== "done") return;
+    if (!detailId || detailId === loadedId) return;
     let alive = true;
-    getProject(openId)
-      .then((detail) => alive && setProject(detail))
+    getProject(detailId)
+      .then((detail) => alive && setLoaded(detail))
       .catch((e) => alive && setError(message(e)));
     return () => {
       alive = false;
     };
-  }, [openId, openedStatus]);
+  }, [detailId, loadedId]);
 
   function open(id: string | null) {
     setError(null);
     setOpenId(id);
+    if (id) setSelectedId(id);
     writeString(LAST_PROJECT, id);
   }
 
@@ -132,13 +142,11 @@ export default function Page() {
     // Solo se recuerdan los proyectos que siguen existiendo: la lista no crece sin fin.
     const alive = new Set((projects ?? []).map((p) => p.id));
     const seen = [...tuningSeen.filter((x) => alive.has(x)), id];
-    setTuningSeen(seen);
     writeString(TUNING_SEEN, seen.join(","));
   }
 
   function chooseSixStems(value: boolean) {
-    setSixStems(value);
-    writeFlag(SIX_STEMS, value);
+    writeString(SIX_STEMS, value ? "1" : "0");
   }
 
   // Soltar un audio o un enlace en cualquier parte de la ventana crea un proyecto.
@@ -173,67 +181,85 @@ export default function Page() {
     },
   };
 
+  function addSong() {
+    open(null);
+    // El campo del enlace vive en la pantalla del repertorio: se enfoca ya montada.
+    requestAnimationFrame(() => document.getElementById(LINK_FIELD_ID)?.focus());
+  }
+
   return (
-    <main className="workspace" {...dropHandlers}>
-      <header className="header">
-        <nav className={styles.crumbs}>
-          {opened ? (
-            <button type="button" className="brand" onClick={() => open(null)} title="Volver a proyectos">
-              mewsplit
-            </button>
-          ) : (
-            <span className="brand">mewsplit</span>
-          )}
-          <span className={styles.trail}>
-            {opened ? (
-              <>
-                <button type="button" className="label" onClick={() => open(null)}>
-                  proyectos
-                </button>
-                <span className="label">/</span>
-                <span className={styles.current} title={opened.name}>
-                  {opened.name}
-                </span>
-              </>
-            ) : (
-              <span className={`label ${styles.here}`}>proyectos</span>
-            )}
-          </span>
-        </nav>
-        {project && isDetuned(project.tuning_cents) && tuningSeen.includes(project.id) && (
-          <span
-            className={`label ${styles.tuningNotice}`}
-            title={`Esta grabación no está afinada a La 440: está ${formatCents(
-              project.tuning_cents,
-            )} ${project.tuning_cents > 0 ? "más aguda" : "más grave"}. Los acordes ya lo tienen en cuenta. Para tocar encima, afina tu instrumento a La = ${referencePitch(
-              project.tuning_cents,
-            ).toFixed(1)} Hz.`}
-          >
-            grabación desafinada {formatCents(project.tuning_cents)} · afina a La ={" "}
-            {referencePitch(project.tuning_cents).toFixed(1)} Hz
+    <main className="frame" {...dropHandlers}>
+      <header className="top">
+        {opened ? (
+          <button type="button" className="brand" onClick={() => open(null)} title="Volver al repertorio">
+            <Logo />
+            mewsplit
+          </button>
+        ) : (
+          <span className="brand">
+            <Logo />
+            mewsplit
           </span>
         )}
-        <span className="data">
-          {error ? <span className="active">error: {error}</span> : null}
-          {!error && project?.duration ? `${project.duration.toFixed(1)}s` : ""}
-          {!error && project?.device ? ` · ${project.device}` : ""}
-        </span>
+        <div className="top-actions">
+          {error && <span className={`error ${styles.topError}`}>{error}</span>}
+          <button type="button" className="button" onClick={addSong}>
+            Añadir canción
+          </button>
+        </div>
       </header>
 
-      {projects !== null && !opened && <UpdateNotice />}
-
-      {project?.id === openId &&
-        project.status === "done" &&
-        isDetuned(project.tuning_cents) &&
-        !tuningSeen.includes(project.id) && (
-          <TuningNotice cents={project.tuning_cents} onDismiss={() => dismissTuning(project.id)} />
+      <section className="sheet">
+        {opened && (
+          <div className="sheet-head">
+            <button type="button" className={styles.crumb} onClick={() => open(null)}>
+              Repertorio /
+            </button>
+            <h1 className={styles.title} title={opened.name}>
+              {opened.name}
+            </h1>
+            {project && (
+              <span className="chip" title={project.device ? `Separada en ${project.device}` : undefined}>
+                {projectMeta(project)}
+              </span>
+            )}
+            {project && isDetuned(project.tuning_cents) && tuningSeen.includes(project.id) && (
+              <span
+                className={styles.tuningNotice}
+                title={`Esta grabación no está afinada a La 440: está ${formatCents(
+                  project.tuning_cents,
+                )} ${project.tuning_cents > 0 ? "más aguda" : "más grave"}. Los acordes ya lo tienen en cuenta. Para tocar encima, afina tu instrumento a La = ${referencePitch(
+                  project.tuning_cents,
+                ).toFixed(1)} Hz.`}
+              >
+                Grabación desafinada {formatCents(project.tuning_cents)} · afina a La ={" "}
+                {referencePitch(project.tuning_cents).toFixed(1)} Hz
+              </span>
+            )}
+          </div>
         )}
 
-      {content()}
+        <div className="sheet-body">
+          {projects !== null && !opened && <UpdateNotice />}
 
-      {dragging && (
-        <div className={styles.dropHint}>suelta el audio o el enlace para crear un proyecto</div>
-      )}
+          {project?.id === openId &&
+            project.status === "done" &&
+            isDetuned(project.tuning_cents) &&
+            !tuningSeen.includes(project.id) && (
+              <TuningNotice cents={project.tuning_cents} onDismiss={() => dismissTuning(project.id)} />
+            )}
+
+          {content()}
+        </div>
+
+        {dragging && (
+          <div className={styles.dropHint}>
+            <FileIcon />
+            <strong>Suelta para añadir la canción</strong>
+            <span className="muted">Un archivo de audio o un enlace de YouTube</span>
+          </div>
+        )}
+      </section>
     </main>
   );
 
@@ -246,6 +272,8 @@ export default function Page() {
           projects={projects}
           sixStems={sixStems}
           onSixStems={chooseSixStems}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
           onOpen={open}
           onFile={(file) => void fromFile(file)}
           onLink={fromLink}
@@ -257,8 +285,28 @@ export default function Page() {
     if (opened.status === "error") {
       return (
         <div className={styles.status}>
-          <span className="label">{opened.error ?? "el análisis falló"}</span>
-          <span className="label">puedes eliminarlo desde proyectos y volver a crearlo</span>
+          <div className={styles.failure}>
+            <AlertIcon />
+            <div>
+              <strong>No se pudo preparar esta canción</strong>
+              <p className="error">{opened.error ?? "El análisis falló."}</p>
+            </div>
+          </div>
+          <div className={styles.statusActions}>
+            <button type="button" className="button" onClick={() => open(null)}>
+              Volver al repertorio
+            </button>
+            <button
+              type="button"
+              className="button danger"
+              onClick={() => {
+                open(null);
+                void remove(opened.id);
+              }}
+            >
+              Eliminar y empezar de nuevo
+            </button>
+          </div>
         </div>
       );
     }
@@ -266,12 +314,15 @@ export default function Page() {
     if (opened.status !== "done") {
       return (
         <div className={styles.status}>
-          <span className="label">{stageText(opened)}</span>
-          <div className={styles.progressTrack}>
-            <div
-              className={styles.progressFill}
-              style={{ "--progress-width": `${Math.round(opened.progress * 100)}%` } as CSSProperties}
-            />
+          <strong className={styles.statusTitle}>{stageText(opened)}</strong>
+          <div className={styles.bar}>
+            <span style={{ "--progress-width": `${Math.round(opened.progress * 100)}%` } as CSSProperties} />
+          </div>
+          <p className="muted">Sigue en segundo plano aunque vuelvas al repertorio.</p>
+          <div className={styles.statusActions}>
+            <button type="button" className="button" onClick={() => open(null)}>
+              Volver al repertorio
+            </button>
           </div>
         </div>
       );
@@ -292,31 +343,13 @@ function droppedLink(data: DataTransfer): string | null {
   return link?.trim() || null;
 }
 
+/** "4:57 · 6 stems": lo que le sirve a quien toca, no el dispositivo que separó. */
+function projectMeta(project: Project): string {
+  const stems = stemNames(project.stems).length;
+  const parts = [project.duration ? formatDuration(project.duration) : "", stems ? `${stems} stems` : ""];
+  return parts.filter(Boolean).join(" · ");
+}
+
 function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
-}
-
-function readString(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function writeString(key: string, value: string | null) {
-  try {
-    if (value === null) localStorage.removeItem(key);
-    else localStorage.setItem(key, value);
-  } catch {
-    // Sin almacenamiento (ventana privada, datos bloqueados) solo se pierde el recuerdo.
-  }
-}
-
-function readFlag(key: string): boolean {
-  return readString(key) === "1";
-}
-
-function writeFlag(key: string, value: boolean) {
-  writeString(key, value ? "1" : "0");
 }

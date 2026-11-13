@@ -268,6 +268,25 @@ def test_a_youtube_link_becomes_a_project(client, headers, monkeypatch):
     assert body["chords"] == [{"start": 0.0, "end": 30.0, "chord": "C"}]
 
 
+def test_the_stem_model_is_known_before_the_analysis_ends(client, headers, monkeypatch):
+    # La lista agrupa por 4 y 6 stems: una canción a medias tiene que caer ya en su grupo.
+    monkeypatch.setattr(api, "analyze", lambda *a, **k: pytest.fail("no debía analizarse"))
+    monkeypatch.setattr(api.youtube, "download", lambda *a, **k: pytest.fail("no debía descargarse"))
+    monkeypatch.setattr(api.BackgroundTasks, "add_task", lambda *a, **k: None)
+
+    created = client.post(
+        "/projects/youtube",
+        params={"model": "htdemucs_6s.yaml"},
+        json={"url": "https://youtu.be/jNQXAC9IVRw"},
+        headers=headers,
+    ).json()
+
+    assert created["status"] == "downloading"
+    assert created["model"] == "htdemucs_6s.yaml"
+    [listed] = client.get("/projects", headers=headers).json()
+    assert listed["model"] == "htdemucs_6s.yaml"
+
+
 def test_a_link_that_is_not_a_video_is_rejected_before_creating_anything(client, headers):
     response = from_youtube(client, headers, "https://www.youtube.com/@jawed")
     assert response.status_code == 422

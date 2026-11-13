@@ -20,11 +20,11 @@ export function SpeedControl({ speed, keepsPitch, onSpeed }: Props) {
   const percent = `${Math.round(speed * 100)}%`;
 
   return (
-    <div className={styles.zoom}>
-      <span className="label">velocidad</span>
+    <div className={styles.stepper}>
+      <span className="label">Velocidad</span>
       <button
         type="button"
-        className="label"
+        className="button square"
         disabled={index <= 0}
         onClick={() => onSpeed(SPEED_STEPS[index - 1])}
         aria-label="Más lento"
@@ -33,7 +33,7 @@ export function SpeedControl({ speed, keepsPitch, onSpeed }: Props) {
       </button>
       <button
         type="button"
-        className={`data ${speed !== 1 ? styles.speedChanged : ""}`}
+        className={`data ${styles.stepperValue} ${speed !== 1 ? styles.speedChanged : ""}`}
         onClick={() => onSpeed(1)}
         title={
           keepsPitch
@@ -45,7 +45,7 @@ export function SpeedControl({ speed, keepsPitch, onSpeed }: Props) {
       </button>
       <button
         type="button"
-        className="label"
+        className="button square"
         disabled={index >= SPEED_STEPS.length - 1}
         onClick={() => onSpeed(SPEED_STEPS[index + 1])}
         aria-label="Más rápido"

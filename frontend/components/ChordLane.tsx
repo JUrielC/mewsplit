@@ -25,14 +25,15 @@ export function ChordLane({ chords, duration, time, onSeek }: Props) {
   return (
     <div className={styles.chordLane}>
       {chords.map((chord) => {
-        const playing = time >= chord.start && time < chord.end;
+        // Un hueco sin armonía no se enciende: sería un bloque gris sin nada que leer.
+        const playing = chord.chord !== "N" && time >= chord.start && time < chord.end;
         const width = ((chord.end - chord.start) / duration) * 100;
 
         return (
           <button
             key={`${chord.start}-${chord.chord}`}
             type="button"
-            className={`${styles.chord} ${playing ? styles.chordPlaying : ""}`}
+            className={`${styles.chord} ${chord.chord === "N" ? styles.chordEmpty : ""} ${playing ? styles.chordPlaying : ""}`}
             style={{ width: `${width}%` }}
             title={`${formatChord(chord.chord)} · ${chord.start.toFixed(2)}s`}
             onClick={(event) => {

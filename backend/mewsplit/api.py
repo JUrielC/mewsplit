@@ -422,6 +422,7 @@ async def create_project(
         name=Path(filename).stem,
         filename=filename,
         created_at=datetime.now().isoformat(timespec="seconds"),
+        model=model,
     )
     original = projects.original_path(project)
     original.parent.mkdir(parents=True, exist_ok=True)
@@ -466,6 +467,7 @@ def create_project_from_youtube(
         created_at=datetime.now().isoformat(timespec="seconds"),
         status=Status.DOWNLOADING.value,
         source_url=url,
+        model=model,
     )
     projects.save(project)
 

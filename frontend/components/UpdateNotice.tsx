@@ -69,22 +69,27 @@ export function UpdateNotice() {
   }
 
   return (
-    <div className={styles.updateBanner} role="status">
+    <div className={`alert ${styles.updateBanner}`} role="status">
       <div className={styles.updateRow}>
-        <span className={styles.tuningHeadline}>
-          {mode === "updated" ? `mewsplit se actualizó a ${info.current_version}` : `mewsplit ${latest} disponible`}
-        </span>
-        <span className="label">
-          {mode === "updated" ? `antes tenías la ${info.updated_from}` : `tienes la ${info.current_version}`}
-        </span>
+        <p>
+          {mode === "updated" ? (
+            <>
+              <strong>mewsplit se actualizó a {info.current_version}.</strong> Antes tenías la {info.updated_from}.
+            </>
+          ) : (
+            <>
+              <strong>mewsplit {latest}</strong> está disponible; tienes la {info.current_version}.
+            </>
+          )}
+        </p>
         {notes.length > 0 && (
           <button
             type="button"
-            className="label"
+            className={styles.textButton}
             onClick={() => setShowNotes((v) => !v)}
             aria-expanded={showNotes}
           >
-            {showNotes ? "ocultar novedades" : "novedades"}
+            {showNotes ? "Ocultar novedades" : "Novedades"}
           </button>
         )}
 
@@ -94,21 +99,17 @@ export function UpdateNotice() {
       {showNotes && (
         <ul className={styles.updateNotes}>
           {notes.map((note) => (
-            <li key={note} className="label">
-              {note}
-            </li>
+            <li key={note}>{note}</li>
           ))}
         </ul>
       )}
 
       {mode === "available" && !info.can_self_update && (
         <div className={styles.updateManual}>
-          {info.self_update_unavailable_reason && (
-            <span className="label">{info.self_update_unavailable_reason}</span>
-          )}
+          {info.self_update_unavailable_reason && <span>{info.self_update_unavailable_reason}</span>}
           {info.install_command && (
             <>
-              <span className="label">o vuelve a ejecutar el instalador:</span>
+              <span>O vuelve a ejecutar el instalador:</span>
               <code className={`data ${styles.command}`}>{info.install_command}</code>
             </>
           )}
@@ -120,28 +121,28 @@ export function UpdateNotice() {
   function actions() {
     if (mode === "updated") {
       return (
-        <button type="button" className={`label ${styles.primary}`} onClick={later}>
-          entendido
+        <button type="button" className="button" onClick={later}>
+          Entendido
         </button>
       );
     }
-    if (phase === "installing") return <span className="label">descargando mewsplit {latest}…</span>;
+    if (phase === "installing") return <span>Descargando mewsplit {latest}…</span>;
     if (phase === "started") {
-      return <span className="label">mewsplit se cerrará y volverá a abrirse ya actualizado</span>;
+      return <span>mewsplit se cerrará y volverá a abrirse ya actualizado.</span>;
     }
     return (
       <>
-        {phase === "error" && <span className={`label ${styles.updateError}`}>{error}</span>}
+        {phase === "error" && <span className="error">{error}</span>}
         {info?.can_self_update && (
-          <button type="button" className={`label ${styles.primary}`} onClick={install}>
-            {phase === "error" ? "reintentar" : "actualizar"}
+          <button type="button" className="button" onClick={install}>
+            {phase === "error" ? "Reintentar" : "Actualizar"}
           </button>
         )}
-        <button type="button" className="label" onClick={later}>
-          ahora no
+        <button type="button" className="button ghost" onClick={later}>
+          Ahora no
         </button>
-        <button type="button" className={`label ${styles.hint}`} onClick={skip}>
-          omitir esta versión
+        <button type="button" className={styles.textButton} onClick={skip}>
+          Omitir esta versión
         </button>
       </>
     );
