@@ -211,7 +211,7 @@ def _registry() -> dict[str, Job]:
     return _jobs
 
 
-app = FastAPI(title="mewsplit", version="0.2.0")
+app = FastAPI(title="mewsplit", version="0.3.0")
 
 app.add_middleware(
     CORSMiddleware,
